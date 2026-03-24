@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { subscribeToOrder } from '../../lib/firebaseHelpers';
-import { FiCheckCircle, FiPhone } from 'react-icons/fi';
+import { FiCheckCircle, FiPhone, FiClock, FiAlertCircle } from 'react-icons/fi';
 
-const STATUS_STEPS = [
+// Delivery steps
+const DELIVERY_STEPS = [
   { key: 'pending',          label: 'Order Placed',       icon: '📋', desc: 'Waiting for kitchen to confirm' },
   { key: 'accepted',         label: 'Accepted',           icon: '✅', desc: 'Kitchen confirmed your order' },
   { key: 'preparing',        label: 'Preparing',          icon: '👨‍🍳', desc: 'Your food is being cooked' },
@@ -13,13 +14,16 @@ const STATUS_STEPS = [
   { key: 'delivered',        label: 'Delivered',          icon: '🎉', desc: 'Enjoy your meal!' },
 ];
 
+// Pickup steps — simplified, no delivery stages
 const PICKUP_STEPS = [
-  { key: 'pending',    label: 'Order Placed',      icon: '📋', desc: 'Waiting for kitchen to confirm' },
-  { key: 'accepted',  label: 'Accepted',           icon: '✅', desc: 'Kitchen confirmed your order' },
-  { key: 'preparing', label: 'Preparing',          icon: '👨‍🍳', desc: 'Your food is being cooked' },
-  { key: 'ready',     label: 'Ready for Pickup',   icon: '🔔', desc: 'Please come to collect your order!' },
-  { key: 'delivered', label: 'Picked Up',          icon: '🎉', desc: 'Enjoy your meal!' },
+  { key: 'pending',    label: 'Order Placed',        icon: '📋', desc: 'Waiting for kitchen to confirm' },
+  { key: 'accepted',  label: 'Accepted',             icon: '✅', desc: 'Kitchen confirmed your order' },
+  { key: 'preparing', label: 'Preparing',            icon: '👨‍🍳', desc: 'Your food is being cooked' },
+  { key: 'ready',     label: 'Ready for Pickup! 🎉', icon: '🔔', desc: 'Please come to collect your order — it\'s hot and ready!' },
+  { key: 'delivered', label: 'Picked Up',            icon: '✅', desc: 'Enjoy your meal!' },
 ];
+
+const CONTACT_PHONE = '7348123';
 
 export default function TrackOrder() {
   const router = useRouter();
@@ -27,23 +31,43 @@ export default function TrackOrder() {
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [timeLeft, setTimeLeft] = useState(null);
+  const [isOverdue, setIsOverdue] = useState(false);
+  const [deliveredAt, setDeliveredAt] = useState(null);
 
   useEffect(() => {
     if (!id) return;
-    const unsub = subscribeToOrder(id, ord => { setOrder(ord); setLoading(false); });
+    const unsub = subscribeToOrder(id, ord => {
+      setOrder(ord);
+      setLoading(false);
+      // Record when order was delivered
+      if (ord.status === 'delivered' && ord.updatedAt) {
+        const t = ord.updatedAt.toDate ? ord.updatedAt.toDate() : new Date(ord.updatedAt);
+        setDeliveredAt(t);
+      }
+    });
     return () => unsub();
   }, [id]);
 
+  // Timer logic — stop when delivered
   useEffect(() => {
     if (!order?.estimatedTime) { setTimeLeft(null); return; }
+    if (order.status === 'delivered' || order.status === 'rejected') { setTimeLeft(null); return; }
+
     const interval = setInterval(() => {
-      const diff = Math.max(0, order.estimatedTime - Date.now());
-      const mins = Math.floor(diff / 60000);
-      const secs = Math.floor((diff % 60000) / 1000);
-      setTimeLeft(diff > 0 ? `${mins}:${secs.toString().padStart(2, '0')}` : null);
+      const diff = order.estimatedTime - Date.now();
+      if (diff <= 0) {
+        setIsOverdue(true);
+        setTimeLeft(null);
+        clearInterval(interval);
+      } else {
+        setIsOverdue(false);
+        const mins = Math.floor(diff / 60000);
+        const secs = Math.floor((diff % 60000) / 1000);
+        setTimeLeft(`${mins}:${secs.toString().padStart(2, '0')}`);
+      }
     }, 1000);
     return () => clearInterval(interval);
-  }, [order?.estimatedTime]);
+  }, [order?.estimatedTime, order?.status]);
 
   if (loading) return (
     <div className="min-h-screen bg-bg-warm flex items-center justify-center">
@@ -61,12 +85,28 @@ export default function TrackOrder() {
     </div>
   );
 
-  const steps = order.orderType === 'pickup' ? PICKUP_STEPS : STATUS_STEPS;
+  const isPickup = order.orderType === 'pickup';
+  const steps = isPickup ? PICKUP_STEPS : DELIVERY_STEPS;
   const currentIdx = steps.findIndex(s => s.key === order.status);
   const currentStep = steps[currentIdx] || steps[0];
   const isRejected = order.status === 'rejected';
-  const isCompleted = order.status === 'delivered';
+  const isDelivered = order.status === 'delivered';
   const currency = order.currency || 'SBD';
+
+  // Calculate timing info for delivered orders
+  let timingMessage = null;
+  if (isDelivered && order.estimatedTime && deliveredAt) {
+    const expectedTime = new Date(order.estimatedTime);
+    const diffMs = deliveredAt - expectedTime;
+    const diffMins = Math.round(Math.abs(diffMs) / 60000);
+    if (diffMs <= 0) {
+      timingMessage = { type: 'early', text: `Delivered ${diffMins} minute${diffMins !== 1 ? 's' : ''} ahead of schedule! 🎉` };
+    } else if (diffMins <= 5) {
+      timingMessage = { type: 'ontime', text: 'Delivered right on time! ✅' };
+    } else {
+      timingMessage = { type: 'late', text: `Delivered ${diffMins} minute${diffMins !== 1 ? 's' : ''} later than expected. Sorry for the wait!` };
+    }
+  }
 
   return (
     <>
@@ -85,28 +125,90 @@ export default function TrackOrder() {
         <div className="max-w-lg mx-auto px-3 sm:px-4 py-5 space-y-4"
           style={{paddingBottom: 'max(24px, env(safe-area-inset-bottom))'}}>
 
+          {/* Rejected */}
           {isRejected && (
             <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-5 text-center">
               <p className="text-4xl mb-2">😔</p>
               <p className="font-display font-bold text-red-800 text-xl">Order Rejected</p>
               <p className="text-red-600 text-sm mt-1">{order.rejectionReason || 'The kitchen was unable to accept your order at this time.'}</p>
-              <button onClick={() => router.push('/')} className="mt-4 btn-primary px-6 py-3 rounded-xl">Order Again</button>
+              <p className="text-red-600 text-sm mt-2">Please call us for assistance:</p>
+              <a href={`tel:${CONTACT_PHONE}`} className="inline-flex items-center gap-2 mt-2 font-bold text-red-700 hover:underline">
+                <FiPhone size={14} /> {CONTACT_PHONE}
+              </a>
+              <button onClick={() => router.push('/')} className="mt-4 btn-primary px-6 py-3 rounded-xl block mx-auto">Order Again</button>
             </div>
           )}
 
-          {/* Timer */}
-          {!isRejected && timeLeft && (
+          {/* Countdown timer — only show when not delivered and not overdue */}
+          {!isRejected && !isDelivered && timeLeft && (
             <div className="bg-gradient-to-br from-primary to-primary-dark rounded-2xl p-5 text-center text-white shadow-warm">
-              <p className="text-white/70 text-sm font-semibold mb-1">
-                {order.orderType === 'pickup' ? '⏱ Ready in approximately' : '⏱ Estimated delivery in'}
+              <p className="text-white/70 text-sm font-semibold mb-1 flex items-center justify-center gap-1">
+                <FiClock size={14} />
+                {isPickup ? 'Ready for pickup in approximately' : 'Estimated delivery in'}
               </p>
               <p className="font-display font-bold text-5xl sm:text-6xl">{timeLeft}</p>
               <p className="text-white/60 text-xs mt-1">minutes remaining</p>
             </div>
           )}
 
-          {/* Current status */}
-          {!isRejected && (
+          {/* Overdue message — timer ran out but not delivered yet */}
+          {!isRejected && !isDelivered && isOverdue && (
+            <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4">
+              <div className="flex items-start gap-3">
+                <FiAlertCircle size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-amber-800 text-sm">
+                    {isPickup ? 'Taking a little longer than expected' : 'Taking a little longer than expected'}
+                  </p>
+                  <p className="text-amber-700 text-xs mt-1">
+                    {isPickup
+                      ? 'Your order is still being prepared. It should be ready very soon — please bear with us!'
+                      : 'Your order is on its way but running a little late. Our rider is doing their best to reach you!'}
+                  </p>
+                  <p className="text-amber-700 text-xs mt-2 font-semibold">Need help? Call us:</p>
+                  <a href={`tel:${CONTACT_PHONE}`} className="inline-flex items-center gap-1.5 mt-1 font-bold text-amber-800 hover:underline text-sm">
+                    <FiPhone size={13} /> {CONTACT_PHONE}
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Delivered timing message */}
+          {isDelivered && timingMessage && (
+            <div className={`rounded-2xl p-4 border-2 ${
+              timingMessage.type === 'late'
+                ? 'bg-orange-50 border-orange-200'
+                : 'bg-green-50 border-green-200'
+            }`}>
+              <p className={`font-bold text-sm text-center ${
+                timingMessage.type === 'late' ? 'text-orange-800' : 'text-green-800'
+              }`}>
+                {timingMessage.text}
+              </p>
+              {timingMessage.type === 'late' && (
+                <p className="text-orange-600 text-xs text-center mt-1">
+                  We apologise for the delay. Your feedback matters to us!
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Pickup ready — big highlighted card */}
+          {isPickup && order.status === 'ready' && (
+            <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-5 text-center text-white shadow-lg">
+              <p className="text-5xl mb-2">🔔</p>
+              <p className="font-display font-bold text-2xl mb-1">Your order is ready!</p>
+              <p className="text-white/80 text-sm">Please come to collect your order now — it&apos;s hot and fresh!</p>
+              <a href={`tel:${CONTACT_PHONE}`}
+                className="inline-flex items-center gap-2 mt-3 bg-white/20 hover:bg-white/30 text-white font-bold text-sm px-4 py-2 rounded-full transition-colors">
+                <FiPhone size={14} /> Call us: {CONTACT_PHONE}
+              </a>
+            </div>
+          )}
+
+          {/* Current status card — don't show for pickup ready (already shown above) */}
+          {!isRejected && !(isPickup && order.status === 'ready') && (
             <div className="bg-white rounded-2xl p-5 shadow-card text-center">
               <span className="text-5xl">{currentStep.icon}</span>
               <h2 className="font-display font-bold text-secondary text-xl mt-2">{currentStep.label}</h2>
@@ -119,8 +221,8 @@ export default function TrackOrder() {
             <div className="bg-white rounded-2xl p-4 shadow-card">
               <div className="space-y-3">
                 {steps.map((step, idx) => {
-                  const done = idx < currentIdx || isCompleted;
-                  const active = idx === currentIdx && !isCompleted;
+                  const done = idx < currentIdx || isDelivered;
+                  const active = idx === currentIdx && !isDelivered;
                   return (
                     <div key={step.key} className="flex items-center gap-3">
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm transition-all
@@ -182,15 +284,16 @@ export default function TrackOrder() {
             </div>
           </div>
 
-          {/* Contact */}
+          {/* Contact card — always visible */}
           <div className="bg-secondary/5 border border-secondary/10 rounded-2xl p-4 text-center text-sm">
             <p className="text-text-muted mb-2">Need help with your order?</p>
-            <a href="tel:7348123" className="inline-flex items-center gap-2 font-bold text-primary hover:underline">
-              <FiPhone size={14} /> WhatsApp / Call: 7348123
+            <a href={`tel:${CONTACT_PHONE}`} className="inline-flex items-center gap-2 font-bold text-primary hover:underline text-base">
+              <FiPhone size={16} /> Call / WhatsApp: {CONTACT_PHONE}
             </a>
+            <p className="text-text-muted text-xs mt-1">We&apos;re here to help!</p>
           </div>
 
-          {isCompleted && (
+          {isDelivered && (
             <button onClick={() => router.push('/')} className="btn-primary w-full py-3.5 rounded-xl text-base font-black">
               Order Again 🍛
             </button>
