@@ -16,6 +16,7 @@ import ImageUploader from '../../components/ImageUploader';
 const TABS = [
   { id: 'orders',   label: 'Orders',    icon: '📋' },
   { id: 'menu',     label: 'Menu',      icon: '🍛' },
+  { id: 'reports',  label: 'Reports',   icon: '📊' },
   { id: 'delivery', label: 'Delivery',  icon: '🛵' },
   { id: 'settings', label: 'Settings',  icon: '⚙️' },
 ];
@@ -106,6 +107,9 @@ export default function AdminPanel() {
                 menuItems={menuItems} setMenuItems={setMenuItems}
                 currency={settings?.currency || 'SBD'}
               />
+            )}
+            {tab === 'reports' && (
+              <ReportsTab orders={orders} currency={settings?.currency || 'SBD'} menuItems={menuItems} />
             )}
             {tab === 'delivery' && (
               <DeliveryTab settings={settings} setSettings={setSettings} />
@@ -702,6 +706,214 @@ function SettingsTab({ settings, setSettings }) {
         {saving ? <div className="spinner w-4 h-4" /> : <FiSave size={16} />}
         Save All Settings
       </button>
+    </div>
+  );
+}
+
+// ─── REPORTS TAB ───────────────────────────────────────────────────────────
+function ReportsTab({ orders, currency, menuItems }) {
+  const [period, setPeriod] = useState('today');
+
+  // Filter orders by period
+  function getFilteredOrders() {
+    const now = new Date();
+    return orders.filter(o => {
+      if (o.status === 'rejected') return false;
+      if (!o.createdAt) return false;
+      const date = o.createdAt.toDate ? o.createdAt.toDate() : new Date(o.createdAt);
+      if (period === 'today') {
+        return date.toDateString() === now.toDateString();
+      } else if (period === 'week') {
+        const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
+        return date >= weekAgo;
+      } else if (period === 'month') {
+        return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+      }
+      return true;
+    });
+  }
+
+  const filtered = getFilteredOrders();
+  const delivered = filtered.filter(o => o.status === 'delivered');
+  const totalRevenue = delivered.reduce((s, o) => s + (o.total || 0), 0);
+  const totalOrders = filtered.length;
+  const deliveredCount = delivered.length;
+  const pendingCount = filtered.filter(o => o.status === 'pending').length;
+  const avgOrder = deliveredCount > 0 ? totalRevenue / deliveredCount : 0;
+
+  // Payment method breakdown
+  const codOrders = delivered.filter(o => o.paymentMethod === 'cod').length;
+  const mselenOrders = delivered.filter(o => o.paymentMethod === 'mselen').length;
+
+  // Order type breakdown
+  const deliveryOrders = filtered.filter(o => o.orderType === 'delivery').length;
+  const pickupOrders = filtered.filter(o => o.orderType === 'pickup').length;
+
+  // Top selling items
+  const itemCounts = {};
+  delivered.forEach(o => {
+    o.items?.forEach(item => {
+      if (!itemCounts[item.name]) itemCounts[item.name] = { qty: 0, revenue: 0 };
+      itemCounts[item.name].qty += item.quantity;
+      itemCounts[item.name].revenue += (item.discountedPrice || item.price) * item.quantity;
+    });
+  });
+  const topItems = Object.entries(itemCounts)
+    .sort((a, b) => b[1].qty - a[1].qty)
+    .slice(0, 5);
+
+  // Recent orders
+  const recentOrders = [...filtered].sort((a, b) => {
+    const da = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+    const db = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+    return db - da;
+  }).slice(0, 5);
+
+  const STATUS_COLORS = {
+    pending: 'status-pending', accepted: 'status-accepted', preparing: 'status-preparing',
+    ready: 'status-ready', out_for_delivery: 'status-out_for_delivery',
+    delivered: 'status-delivered', rejected: 'status-rejected',
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Period selector */}
+      <div className="flex gap-2">
+        {[
+          { id: 'today', label: 'Today' },
+          { id: 'week',  label: 'This Week' },
+          { id: 'month', label: 'This Month' },
+          { id: 'all',   label: 'All Time' },
+        ].map(p => (
+          <button key={p.id} onClick={() => setPeriod(p.id)}
+            className={`px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+              period === p.id ? 'bg-primary text-white' : 'bg-white text-text-muted hover:bg-orange-50'
+            }`}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: 'Total Revenue', value: `${currency} ${totalRevenue.toFixed(0)}`, color: 'text-primary', bg: 'bg-orange-50' },
+          { label: 'Total Orders', value: totalOrders, color: 'text-secondary', bg: 'bg-amber-50' },
+          { label: 'Delivered', value: deliveredCount, color: 'text-green-700', bg: 'bg-green-50' },
+          { label: 'Avg Order Value', value: `${currency} ${avgOrder.toFixed(0)}`, color: 'text-blue-700', bg: 'bg-blue-50' },
+        ].map((card, i) => (
+          <div key={i} className={`${card.bg} rounded-2xl p-3 sm:p-4`}>
+            <p className="text-text-muted text-xs font-semibold mb-1">{card.label}</p>
+            <p className={`font-black text-lg sm:text-xl ${card.color}`}>{card.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Order type + Payment breakdown */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="bg-white rounded-2xl p-4 shadow-card">
+          <h3 className="font-display font-bold text-secondary mb-3 text-sm">🛵 Order Type</h3>
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-text-muted">Delivery</span>
+              <span className="font-bold text-secondary text-sm">{deliveryOrders} orders</span>
+            </div>
+            <div className="w-full bg-orange-100 rounded-full h-2">
+              <div className="bg-primary h-2 rounded-full transition-all"
+                style={{width: totalOrders > 0 ? `${(deliveryOrders/totalOrders)*100}%` : '0%'}} />
+            </div>
+            <div className="flex justify-between items-center mt-2">
+              <span className="text-sm text-text-muted">Pickup</span>
+              <span className="font-bold text-secondary text-sm">{pickupOrders} orders</span>
+            </div>
+            <div className="w-full bg-orange-100 rounded-full h-2">
+              <div className="bg-accent h-2 rounded-full transition-all"
+                style={{width: totalOrders > 0 ? `${(pickupOrders/totalOrders)*100}%` : '0%'}} />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl p-4 shadow-card">
+          <h3 className="font-display font-bold text-secondary mb-3 text-sm">💳 Payment Method</h3>
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-text-muted">💵 Cash on Delivery</span>
+              <span className="font-bold text-secondary text-sm">{codOrders} orders</span>
+            </div>
+            <div className="w-full bg-orange-100 rounded-full h-2">
+              <div className="bg-green-500 h-2 rounded-full transition-all"
+                style={{width: deliveredCount > 0 ? `${(codOrders/deliveredCount)*100}%` : '0%'}} />
+            </div>
+            <div className="flex justify-between items-center mt-2">
+              <span className="text-sm text-text-muted">📱 M-SELEN</span>
+              <span className="font-bold text-secondary text-sm">{mselenOrders} orders</span>
+            </div>
+            <div className="w-full bg-orange-100 rounded-full h-2">
+              <div className="bg-blue-500 h-2 rounded-full transition-all"
+                style={{width: deliveredCount > 0 ? `${(mselenOrders/deliveredCount)*100}%` : '0%'}} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Top selling items */}
+      <div className="bg-white rounded-2xl p-4 shadow-card">
+        <h3 className="font-display font-bold text-secondary mb-3 text-sm">🏆 Top Selling Items</h3>
+        {topItems.length === 0 ? (
+          <p className="text-text-muted text-sm text-center py-4">No data for this period</p>
+        ) : (
+          <div className="space-y-2.5">
+            {topItems.map(([name, data], i) => (
+              <div key={name} className="flex items-center gap-3">
+                <span className="w-6 h-6 rounded-full bg-orange-100 text-primary text-xs font-black flex items-center justify-center flex-shrink-0">
+                  {i + 1}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-sm font-semibold text-secondary truncate">{name}</span>
+                    <span className="text-xs text-text-muted flex-shrink-0 ml-2">{data.qty} sold</span>
+                  </div>
+                  <div className="w-full bg-orange-100 rounded-full h-1.5">
+                    <div className="bg-primary h-1.5 rounded-full"
+                      style={{width: `${(data.qty / (topItems[0]?.[1]?.qty || 1)) * 100}%`}} />
+                  </div>
+                </div>
+                <span className="text-xs font-bold text-primary flex-shrink-0">{currency} {data.revenue.toFixed(0)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Recent orders */}
+      <div className="bg-white rounded-2xl p-4 shadow-card">
+        <h3 className="font-display font-bold text-secondary mb-3 text-sm">🕐 Recent Orders</h3>
+        {recentOrders.length === 0 ? (
+          <p className="text-text-muted text-sm text-center py-4">No orders for this period</p>
+        ) : (
+          <div className="space-y-2">
+            {recentOrders.map(order => {
+              const date = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt || 0);
+              return (
+                <div key={order.id} className="flex items-center justify-between gap-2 py-2 border-b border-orange-50 last:border-0">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-secondary text-sm">{order.orderNumber}</span>
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${STATUS_COLORS[order.status]}`}>
+                        {order.status?.replace('_',' ')}
+                      </span>
+                    </div>
+                    <p className="text-xs text-text-muted truncate">
+                      {order.customer?.name} · {date.toLocaleDateString()} {date.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}
+                    </p>
+                  </div>
+                  <span className="font-black text-primary text-sm flex-shrink-0">{currency} {order.total?.toFixed(0)}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
