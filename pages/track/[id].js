@@ -260,10 +260,22 @@ export default function TrackOrder() {
               </div>
               <div className="flex justify-between">
                 <span className="text-text-muted">Delivery</span>
-                <span className={order.deliveryFee === 0 ? 'text-green-600 font-semibold' : ''}>
-                  {order.orderType === 'pickup' ? 'Pickup' : order.deliveryWaived ? '🎁 Waived' : order.deliveryFee === 0 ? 'FREE' : `${currency} ${order.deliveryFee}`}
+                <span className={order.deliveryWaived || order.deliveryFee === 0 ? 'text-green-600 font-semibold' : ''}>
+                  {order.orderType === 'pickup'
+                    ? 'Pickup (Free)'
+                    : order.deliveryWaived
+                      ? '🎁 Waived by Kitchen'
+                      : order.deliveryFee === 0
+                        ? 'FREE'
+                        : `${currency} ${order.deliveryFee}`}
                 </span>
               </div>
+              {order.deliveryWaived && order.deliveryFee > 0 && (
+                <div className="flex justify-between text-green-600 font-semibold">
+                  <span>Delivery Waived</span>
+                  <span>− {currency} {order.deliveryFee?.toFixed(0)}</span>
+                </div>
+              )}
               {order.onlineDiscount > 0 && (
                 <div className="flex justify-between text-green-600 font-semibold">
                   <span>Online Discount</span>
@@ -272,7 +284,13 @@ export default function TrackOrder() {
               )}
               <div className="flex justify-between font-black text-base pt-1 border-t border-orange-100">
                 <span>Total</span>
-                <span className="text-primary">{currency} {order.total?.toFixed(0)}</span>
+                <span className="text-primary">
+                  {currency} {(
+                    (order.subtotal || 0) +
+                    (order.deliveryWaived ? 0 : (order.deliveryFee || 0)) -
+                    (order.onlineDiscount || 0)
+                  ).toFixed(0)}
+                </span>
               </div>
             </div>
             <div className="mt-3 pt-3 border-t border-orange-100 text-xs text-text-muted space-y-1">
