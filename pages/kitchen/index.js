@@ -15,9 +15,12 @@ const STATUS_ACTIONS = {
   ],
   accepted: [{ label: 'Start Preparing', next: 'preparing', color: 'bg-blue-500 hover:bg-blue-600', icon: '👨‍🍳' }],
   preparing: [{ label: 'Mark Ready', next: 'ready', color: 'bg-purple-500 hover:bg-purple-600', icon: '🔔' }],
-  ready: [
+  ready_delivery: [
     { label: 'Out for Delivery', next: 'out_for_delivery', color: 'bg-orange-500 hover:bg-orange-600', icon: '🛵' },
     { label: 'Mark Delivered', next: 'delivered', color: 'bg-green-500 hover:bg-green-600', icon: '🎉' },
+  ],
+  ready_pickup: [
+    { label: 'Mark Picked Up', next: 'delivered', color: 'bg-green-500 hover:bg-green-600', icon: '🎉' },
   ],
   out_for_delivery: [{ label: 'Mark Delivered', next: 'delivered', color: 'bg-green-500 hover:bg-green-600', icon: '🎉' }],
 };
@@ -443,7 +446,13 @@ function OrderCard({ order, isPending, onAccept, onReject, onAction }) {
     return () => clearInterval(interval);
   }, [order.estimatedTime]);
 
-  const actions = STATUS_ACTIONS[order.status] || [];
+  const getActions = () => {
+    if (order.status === 'ready') {
+      return order.orderType === 'pickup' ? STATUS_ACTIONS.ready_pickup : STATUS_ACTIONS.ready_delivery;
+    }
+    return STATUS_ACTIONS[order.status] || [];
+  };
+  const actions = getActions();
   const currency = order.currency || 'SBD';
 
   const trackingUrl = typeof window !== 'undefined' ? `${window.location.origin}/track/${order.id}` : '';
