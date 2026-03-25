@@ -11,6 +11,7 @@ export default function Checkout() {
   const { items, subtotal, clearCart, getDiscountedPrice } = useCart();
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [orderPlaced, setOrderPlaced] = useState(false);
   const [orderType, setOrderType] = useState('delivery');
   const [paymentMethod, setPaymentMethod] = useState('cod');
   const [selectedArea, setSelectedArea] = useState('');
@@ -23,9 +24,10 @@ export default function Checkout() {
     });
   }, []);
 
+  // Only redirect to home if cart is empty AND order hasn't been placed
   useEffect(() => {
-    if (items.length === 0) router.push('/');
-  }, [items, router]);
+    if (items.length === 0 && !orderPlaced) router.push('/');
+  }, [items, router, orderPlaced]);
 
   const currency = settings?.currency || 'SBD';
   const freeThreshold = settings?.freeDeliveryThreshold || 100;
@@ -62,6 +64,7 @@ export default function Checkout() {
         status: 'pending', estimatedTime: null, deliveryWaived: false,
       };
       const { id, orderNumber } = await createOrder(orderData);
+      setOrderPlaced(true);
       clearCart();
       toast.success(`Order ${orderNumber} placed successfully!`);
       router.push(`/track/${id}?orderNumber=${orderNumber}`);
