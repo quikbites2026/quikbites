@@ -284,13 +284,29 @@ export default function TrackOrder() {
             </div>
           </div>
 
-          {/* Contact card — always visible */}
-          <div className="bg-secondary/5 border border-secondary/10 rounded-2xl p-4 text-center text-sm">
-            <p className="text-text-muted mb-2">Need help with your order?</p>
-            <a href={`tel:${CONTACT_PHONE}`} className="inline-flex items-center gap-2 font-bold text-primary hover:underline text-base">
-              <FiPhone size={16} /> Call / WhatsApp: {CONTACT_PHONE}
-            </a>
-            <p className="text-text-muted text-xs mt-1">We&apos;re here to help!</p>
+          {/* Contact card — always visible with WhatsApp, SMS and Call buttons */}
+          <div className="bg-white rounded-2xl p-4 shadow-card">
+            <p className="font-display font-bold text-secondary text-sm mb-1">Need help with your order?</p>
+            <p className="text-text-muted text-xs mb-3">Our team is ready to assist you anytime!</p>
+            <div className="grid grid-cols-3 gap-2">
+              <a href={`https://wa.me/677${CONTACT_PHONE}?text=${encodeURIComponent(`Hi QuikBites, I need help with my order ${order.orderNumber}`)}`}
+                target="_blank" rel="noreferrer"
+                className="flex flex-col items-center gap-1.5 bg-green-50 hover:bg-green-100 border border-green-200 text-green-800 font-bold text-xs py-3 rounded-xl transition-colors">
+                <span style={{fontSize:'22px'}}>💬</span>
+                WhatsApp
+              </a>
+              <a href={`sms:${CONTACT_PHONE}?body=${encodeURIComponent(`Hi QuikBites, I need help with my order ${order.orderNumber}`)}`}
+                className="flex flex-col items-center gap-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-800 font-bold text-xs py-3 rounded-xl transition-colors">
+                <span style={{fontSize:'22px'}}>📱</span>
+                SMS
+              </a>
+              <a href={`tel:${CONTACT_PHONE}`}
+                className="flex flex-col items-center gap-1.5 bg-orange-50 hover:bg-orange-100 border border-orange-200 text-primary font-bold text-xs py-3 rounded-xl transition-colors">
+                <span style={{fontSize:'22px'}}>📞</span>
+                Call Us
+              </a>
+            </div>
+            <p className="text-text-muted text-xs text-center mt-2">{CONTACT_PHONE}</p>
           </div>
 
           {isDelivered && (
