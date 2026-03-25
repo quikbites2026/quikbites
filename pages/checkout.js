@@ -63,6 +63,7 @@ export default function Checkout() {
       };
       const { id, orderNumber } = await createOrder(orderData);
       clearCart();
+      toast.success(`Order ${orderNumber} placed successfully!`);
       router.push(`/track/${id}?orderNumber=${orderNumber}`);
     } catch (err) {
       console.error(err);
