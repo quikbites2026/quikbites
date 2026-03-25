@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import Header from '../components/Header';
 import MenuCard from '../components/MenuCard';
@@ -14,6 +14,27 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [installPrompt, setInstallPrompt] = useState(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const catScrollRef = useRef(null);
+
+  function scrollCats(dir) {
+    if (catScrollRef.current) {
+      catScrollRef.current.scrollBy({ left: dir * 200, behavior: 'smooth' });
+    }
+  }
+
+  // Mouse wheel horizontal scroll on category bar
+  useEffect(() => {
+    const el = catScrollRef.current;
+    if (!el) return;
+    const handler = (e) => {
+      if (e.deltaY !== 0) {
+        e.preventDefault();
+        el.scrollBy({ left: e.deltaY * 2, behavior: 'smooth' });
+      }
+    };
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => el.removeEventListener('wheel', handler);
+  }, []);
 
   // Capture PWA install prompt
   useEffect(() => {
@@ -140,31 +161,52 @@ export default function Home() {
             />
           </div>
 
-          {/* Category filter — horizontally scrollable on all screens */}
-          <div className="flex gap-2 overflow-x-auto pb-2 mb-5 scrollbar-hide -mx-3 sm:mx-0 px-3 sm:px-0">
+          {/* Category filter — scrollable with arrows on desktop, swipe on mobile */}
+          <div className="relative mb-5">
+            {/* Left arrow — desktop only */}
             <button
-              onClick={() => setActiveCategory('all')}
-              className={`flex-shrink-0 px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-bold transition-all border ${
-                activeCategory === 'all'
-                  ? 'bg-primary text-white border-primary shadow-warm'
-                  : 'bg-white text-text-muted border-orange-100 hover:border-primary hover:text-primary'
-              }`}
+              onClick={() => scrollCats(-1)}
+              className="hidden sm:flex absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 z-10 w-7 h-7 bg-white border border-orange-100 rounded-full shadow items-center justify-center text-primary hover:bg-orange-50 transition-colors"
             >
-              All
+              ‹
             </button>
-            {activeCats.map(cat => (
+
+            <div
+              ref={catScrollRef}
+              className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-3 sm:mx-0 px-3 sm:px-0"
+            >
               <button
-                key={cat.id}
-                onClick={() => setActiveCategory(cat.id)}
-                className={`flex-shrink-0 px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-bold transition-all border whitespace-nowrap ${
-                  activeCategory === cat.id
+                onClick={() => setActiveCategory('all')}
+                className={`flex-shrink-0 px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-bold transition-all border ${
+                  activeCategory === 'all'
                     ? 'bg-primary text-white border-primary shadow-warm'
                     : 'bg-white text-text-muted border-orange-100 hover:border-primary hover:text-primary'
                 }`}
               >
-                {cat.emoji} {cat.name}
+                All
               </button>
-            ))}
+              {activeCats.map(cat => (
+                <button
+                  key={cat.id}
+                  onClick={() => setActiveCategory(cat.id)}
+                  className={`flex-shrink-0 px-3 sm:px-4 py-2 rounded-full text-xs sm:text-sm font-bold transition-all border whitespace-nowrap ${
+                    activeCategory === cat.id
+                      ? 'bg-primary text-white border-primary shadow-warm'
+                      : 'bg-white text-text-muted border-orange-100 hover:border-primary hover:text-primary'
+                  }`}
+                >
+                  {cat.emoji} {cat.name}
+                </button>
+              ))}
+            </div>
+
+            {/* Right arrow — desktop only */}
+            <button
+              onClick={() => scrollCats(1)}
+              className="hidden sm:flex absolute right-0 top-1/2 -translate-y-1/2 translate-x-3 z-10 w-7 h-7 bg-white border border-orange-100 rounded-full shadow items-center justify-center text-primary hover:bg-orange-50 transition-colors"
+            >
+              ›
+            </button>
           </div>
 
           {/* Loading */}
