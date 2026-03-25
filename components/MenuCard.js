@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useCart } from '../context/CartContext';
-import { FiPlus, FiMinus } from 'react-icons/fi';
+import { FiPlus, FiMinus, FiChevronDown, FiChevronUp } from 'react-icons/fi';
 
 export default function MenuCard({ item, currency = 'SBD' }) {
   const { addItem, items, updateQuantity } = useCart();
   const [adding, setAdding] = useState(false);
+  const [showFullDesc, setShowFullDesc] = useState(false);
 
   const cartItem = items.find(i => i.id === item.id);
   const qty = cartItem?.quantity || 0;
@@ -12,6 +13,9 @@ export default function MenuCard({ item, currency = 'SBD' }) {
   const discountedPrice = hasDiscount
     ? item.price - (item.price * item.discountPercent) / 100
     : item.price;
+
+  // Check if description is long enough to need truncation
+  const isLongDesc = item.description && item.description.length > 60;
 
   async function handleAdd() {
     setAdding(true);
@@ -21,7 +25,7 @@ export default function MenuCard({ item, currency = 'SBD' }) {
 
   return (
     <div className={`menu-card bg-bg-card rounded-2xl overflow-hidden shadow-card border border-orange-100/60 flex flex-col h-full ${!item.available ? 'opacity-50' : ''}`}>
-      {/* Image area — consistent aspect ratio on all screens */}
+      {/* Image area */}
       <div className="relative w-full bg-gradient-to-br from-orange-50 to-amber-50 overflow-hidden" style={{aspectRatio:'4/3'}}>
         {item.image ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -45,12 +49,30 @@ export default function MenuCard({ item, currency = 'SBD' }) {
 
       {/* Content */}
       <div className="p-2.5 sm:p-3 flex flex-col flex-1">
-        <h3 className="font-display font-semibold text-text-main text-xs sm:text-sm leading-snug mb-1 line-clamp-2">
+        <h3 className="font-display font-semibold text-text-main text-xs sm:text-sm leading-snug mb-1">
           {item.name}
         </h3>
-        <p className="text-text-muted text-xs leading-relaxed flex-1 mb-2 line-clamp-2 hidden xs:block sm:block">
-          {item.description}
-        </p>
+
+        {/* Description with Read more / Show less */}
+        {item.description && (
+          <div className="mb-2 flex-1">
+            <p className={`text-text-muted text-xs leading-relaxed ${!showFullDesc ? 'line-clamp-2' : ''}`}>
+              {item.description}
+            </p>
+            {isLongDesc && (
+              <button
+                onClick={() => setShowFullDesc(p => !p)}
+                className="flex items-center gap-0.5 text-primary text-xs font-bold mt-0.5 hover:underline"
+              >
+                {showFullDesc ? (
+                  <><FiChevronUp size={11} /> Show less</>
+                ) : (
+                  <><FiChevronDown size={11} /> Read more</>
+                )}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Price + Add */}
         <div className="flex items-center justify-between gap-1 mt-auto">
