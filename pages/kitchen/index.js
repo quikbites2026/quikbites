@@ -257,7 +257,7 @@ export default function Kitchen() {
             <label className="text-xs font-bold text-text-muted mb-1 block">Reason (optional)</label>
             <textarea value={rejectionReason} onChange={e => setRejectionReason(e.target.value)} rows={3}
               placeholder="e.g. Item unavailable, kitchen closing..."
-              className="w-full bg-bg-warm border border-orange-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary resize-none mb-4" />
+              className="w-full bg-white border border-orange-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary resize-none mb-4" style={{color: '#2C1A0E'}} />
             <div className="flex gap-2">
               <button onClick={() => setShowRejectModal(null)}
                 className="flex-1 py-3 rounded-xl border border-orange-100 text-text-muted font-bold text-sm">Cancel</button>
