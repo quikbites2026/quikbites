@@ -127,12 +127,16 @@ export default function TrackOrder() {
 
           {/* Rejected */}
           {isRejected && (
-            <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-5 text-center">
-              <p className="text-4xl mb-2">😔</p>
-              <p className="font-display font-bold text-red-800 text-xl">Order Rejected</p>
-              <p className="text-red-600 text-sm mt-1">{order.rejectionReason || 'The kitchen was unable to accept your order at this time.'}</p>
-              <p className="text-red-600 text-sm mt-2">Please call us for assistance:</p>
-              <a href={`tel:${CONTACT_PHONE}`} className="inline-flex items-center gap-2 mt-2 font-bold text-red-700 hover:underline">
+            <div className={`border-2 rounded-2xl p-5 text-center ${order.cancelledAfterAccept ? 'bg-orange-50 border-orange-200' : 'bg-red-50 border-red-200'}`}>
+              <p className="text-4xl mb-2">{order.cancelledAfterAccept ? '⚠️' : '😔'}</p>
+              <p className={`font-display font-bold text-xl ${order.cancelledAfterAccept ? 'text-orange-800' : 'text-red-800'}`}>
+                {order.cancelledAfterAccept ? 'Order Cancelled' : 'Order Rejected'}
+              </p>
+              <p className={`text-sm mt-1 ${order.cancelledAfterAccept ? 'text-orange-600' : 'text-red-600'}`}>
+                {order.rejectionReason || (order.cancelledAfterAccept ? 'Your order was cancelled by the kitchen.' : 'The kitchen was unable to accept your order at this time.')}
+              </p>
+              <p className={`text-sm mt-2 ${order.cancelledAfterAccept ? 'text-orange-600' : 'text-red-600'}`}>Please call us for assistance:</p>
+              <a href={`tel:${CONTACT_PHONE}`} className={`inline-flex items-center gap-2 mt-2 font-bold hover:underline ${order.cancelledAfterAccept ? 'text-orange-700' : 'text-red-700'}`}>
                 <FiPhone size={14} /> {CONTACT_PHONE}
               </a>
               <button onClick={() => router.push('/')} className="mt-4 btn-primary px-6 py-3 rounded-xl block mx-auto">Order Again</button>
