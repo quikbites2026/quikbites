@@ -6,7 +6,7 @@ import { auth } from '../../lib/firebase';
 import { subscribeToActiveOrders, subscribeToKitchenOrders, updateOrderStatus } from '../../lib/firebaseHelpers';
 import { getKitchenId, getKitchenName } from '../../lib/kitchenConfig';
 import toast from 'react-hot-toast';
-import { FiLogOut, FiCheck, FiX, FiClock, FiBell, FiBarChart2, FiShoppingBag } from 'react-icons/fi';
+import { FiLogOut, FiCheck, FiX, FiClock, FiBell, FiBarChart2, FiShoppingBag, FiAlertTriangle } from 'react-icons/fi';
 
 const STATUS_ACTIONS = {
   pending: [
@@ -25,6 +25,9 @@ const STATUS_ACTIONS = {
   out_for_delivery: [{ label: 'Mark Delivered', next: 'delivered', color: 'bg-green-500 hover:bg-green-600', icon: '🎉' }],
 };
 
+// Cancellable statuses — any active order except pending (pending has reject already)
+const CANCELLABLE_STATUSES = ['accepted', 'preparing', 'ready', 'out_for_delivery'];
+
 const STATUS_COLORS = {
   pending: 'status-pending', accepted: 'status-accepted', preparing: 'status-preparing',
   ready: 'status-ready', out_for_delivery: 'status-out_for_delivery',
@@ -38,11 +41,13 @@ export default function Kitchen() {
   const [activeOrders, setActiveOrders] = useState([]);
   const [allOrders, setAllOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('orders'); // 'orders' | 'reports'
+  const [tab, setTab] = useState('orders');
   const [timerMinutes, setTimerMinutes] = useState(30);
   const [rejectionReason, setRejectionReason] = useState('');
   const [showTimerModal, setShowTimerModal] = useState(null);
   const [showRejectModal, setShowRejectModal] = useState(null);
+  const [showCancelModal, setShowCancelModal] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
   const [waiveDelivery, setWaiveDelivery] = useState(false);
   const prevOrderIds = useRef(new Set());
 
@@ -108,6 +113,14 @@ export default function Kitchen() {
   async function handleReject(orderId) {
     await handleAction(orderId, 'rejected', { rejectionReason });
     setShowRejectModal(null); setRejectionReason('');
+  }
+
+  async function handleCancel(orderId) {
+    await handleAction(orderId, 'rejected', { 
+      rejectionReason: cancelReason || 'Order cancelled by kitchen',
+      cancelledAfterAccept: true,
+    });
+    setShowCancelModal(null); setCancelReason('');
   }
 
   const pendingOrders = activeOrders.filter(o => o.status === 'pending');
@@ -199,7 +212,8 @@ export default function Kitchen() {
                 <div className="space-y-3">
                   {inProgressOrders.map(order => (
                     <OrderCard key={order.id} order={order}
-                      onAction={(next) => handleAction(order.id, next)} />
+                      onAction={(next) => handleAction(order.id, next)}
+                      onCancel={CANCELLABLE_STATUSES.includes(order.status) ? () => setShowCancelModal(order.id) : null} />
                   ))}
                 </div>
               </div>
@@ -260,9 +274,36 @@ export default function Kitchen() {
               className="w-full bg-white border border-orange-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary resize-none mb-4" style={{color: '#2C1A0E'}} />
             <div className="flex gap-2">
               <button onClick={() => setShowRejectModal(null)}
-                className="flex-1 py-3 rounded-xl border border-orange-100 text-text-muted font-bold text-sm">Cancel</button>
+                className="flex-1 py-3 rounded-xl border border-orange-100 text-text-muted font-bold text-sm">Back</button>
               <button onClick={() => handleReject(showRejectModal)}
                 className="flex-1 py-3 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-colors">❌ Reject</button>
+            </div>
+          </Modal>
+        )}
+
+        {/* Cancel already-accepted order modal */}
+        {showCancelModal && (
+          <Modal onClose={() => { setShowCancelModal(null); setCancelReason(''); }}>
+            <div className="flex items-center gap-2 mb-3">
+              <FiAlertTriangle size={20} className="text-orange-500 flex-shrink-0" />
+              <h3 className="font-display font-bold text-secondary text-lg">Cancel Order</h3>
+            </div>
+            <p className="text-text-muted text-sm mb-3">
+              This order was already accepted. The customer will be notified it has been cancelled.
+            </p>
+            <label className="text-xs font-bold text-text-muted mb-1 block">Reason for cancellation *</label>
+            <textarea value={cancelReason} onChange={e => setCancelReason(e.target.value)} rows={3}
+              placeholder="e.g. Item ran out of stock, unable to fulfil order..."
+              className="w-full bg-white border border-orange-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-red-400 resize-none mb-4"
+              style={{color: '#2C1A0E'}} />
+            <div className="flex gap-2">
+              <button onClick={() => { setShowCancelModal(null); setCancelReason(''); }}
+                className="flex-1 py-3 rounded-xl border border-orange-100 text-text-muted font-bold text-sm">Back</button>
+              <button onClick={() => handleCancel(showCancelModal)}
+                disabled={!cancelReason.trim()}
+                className="flex-1 py-3 rounded-xl bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white font-bold text-sm transition-colors">
+                ⚠️ Cancel Order
+              </button>
             </div>
           </Modal>
         )}
@@ -278,7 +319,6 @@ function KitchenReports({ orders, kitchenName }) {
   function getFiltered() {
     const now = new Date();
     return orders.filter(o => {
-      if (o.status === 'rejected') return false;
       if (!o.createdAt) return false;
       const date = o.createdAt.toDate ? o.createdAt.toDate() : new Date(o.createdAt);
       if (period === 'today') return date.toDateString() === now.toDateString();
@@ -290,11 +330,11 @@ function KitchenReports({ orders, kitchenName }) {
 
   const filtered = getFiltered();
   const delivered = filtered.filter(o => o.status === 'delivered');
+  const rejected = filtered.filter(o => o.status === 'rejected');
   const totalRevenue = delivered.reduce((s, o) => s + (o.total || 0), 0);
   const avgOrder = delivered.length > 0 ? totalRevenue / delivered.length : 0;
-  const currency = delivered[0]?.currency || 'SBD';
+  const currency = orders[0]?.currency || 'SBD';
 
-  // Top items
   const itemCounts = {};
   delivered.forEach(o => {
     o.items?.forEach(item => {
@@ -305,7 +345,6 @@ function KitchenReports({ orders, kitchenName }) {
   });
   const topItems = Object.entries(itemCounts).sort((a, b) => b[1].qty - a[1].qty).slice(0, 5);
 
-  // Recent delivered orders
   const recentDelivered = [...delivered].sort((a, b) => {
     const da = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
     const db = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
@@ -340,7 +379,7 @@ function KitchenReports({ orders, kitchenName }) {
           <p className="font-black text-accent text-xl">{currency} {totalRevenue.toFixed(0)}</p>
         </div>
         <div className={cardClass}>
-          <p className="text-white/50 text-xs font-semibold mb-1">Orders Completed</p>
+          <p className="text-white/50 text-xs font-semibold mb-1">Completed</p>
           <p className="font-black text-white text-xl">{delivered.length}</p>
         </div>
         <div className={cardClass}>
@@ -348,9 +387,15 @@ function KitchenReports({ orders, kitchenName }) {
           <p className="font-black text-white text-xl">{filtered.length}</p>
         </div>
         <div className={cardClass}>
-          <p className="text-white/50 text-xs font-semibold mb-1">Avg Order Value</p>
-          <p className="font-black text-green-400 text-xl">{currency} {avgOrder.toFixed(0)}</p>
+          <p className="text-white/50 text-xs font-semibold mb-1">Rejected/Cancelled</p>
+          <p className="font-black text-red-400 text-xl">{rejected.length}</p>
         </div>
+      </div>
+
+      {/* Avg order value */}
+      <div className={cardClass}>
+        <p className="text-white/50 text-xs font-semibold mb-1">Average Order Value</p>
+        <p className="font-black text-green-400 text-xl">{currency} {avgOrder.toFixed(0)}</p>
       </div>
 
       {/* Order type breakdown */}
@@ -384,17 +429,14 @@ function KitchenReports({ orders, kitchenName }) {
           <div className="space-y-3">
             {topItems.map(([name, data], i) => (
               <div key={name} className="flex items-center gap-3">
-                <span className="w-6 h-6 rounded-full bg-primary/30 text-accent text-xs font-black flex items-center justify-center flex-shrink-0">
-                  {i + 1}
-                </span>
+                <span className="w-6 h-6 rounded-full bg-primary/30 text-accent text-xs font-black flex items-center justify-center flex-shrink-0">{i + 1}</span>
                 <div className="flex-1 min-w-0">
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-sm font-semibold text-white truncate">{name}</span>
                     <span className="text-xs text-white/50 flex-shrink-0 ml-2">{data.qty} sold</span>
                   </div>
                   <div className="w-full bg-white/10 rounded-full h-1.5">
-                    <div className="bg-primary h-1.5 rounded-full"
-                      style={{width: `${(data.qty / (topItems[0]?.[1]?.qty || 1)) * 100}%`}} />
+                    <div className="bg-primary h-1.5 rounded-full" style={{width: `${(data.qty / (topItems[0]?.[1]?.qty || 1)) * 100}%`}} />
                   </div>
                 </div>
                 <span className="text-xs font-bold text-accent flex-shrink-0">{currency} {data.revenue.toFixed(0)}</span>
@@ -417,11 +459,40 @@ function KitchenReports({ orders, kitchenName }) {
                 <div key={order.id} className="flex items-center justify-between gap-2 py-2 border-b border-white/10 last:border-0">
                   <div className="min-w-0">
                     <p className="font-bold text-white text-sm">{order.orderNumber}</p>
-                    <p className="text-xs text-white/50 truncate">
-                      {order.customer?.name} · {date.toLocaleDateString()} {date.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}
-                    </p>
+                    <p className="text-xs text-white/50 truncate">{order.customer?.name} · {date.toLocaleDateString()} {date.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
                   </div>
                   <span className="font-black text-accent text-sm flex-shrink-0">{currency} {order.total?.toFixed(0)}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Rejected / Cancelled orders */}
+      <div className={cardClass}>
+        <h3 className="font-bold text-white text-sm mb-3">❌ Rejected & Cancelled Orders</h3>
+        {rejected.length === 0 ? (
+          <p className="text-white/40 text-sm text-center py-4">No rejected orders for this period</p>
+        ) : (
+          <div className="space-y-2">
+            {rejected.map(order => {
+              const date = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt || 0);
+              return (
+                <div key={order.id} className="bg-red-500/10 border border-red-400/20 rounded-xl p-3">
+                  <div className="flex items-start justify-between gap-2 flex-wrap">
+                    <div className="min-w-0">
+                      <p className="font-bold text-white text-sm">{order.orderNumber}</p>
+                      <p className="text-xs text-white/50">{order.customer?.name} · {date.toLocaleDateString()} {date.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</p>
+                      {order.rejectionReason && <p className="text-xs text-red-300 mt-1">Reason: {order.rejectionReason}</p>}
+                    </div>
+                    <span className="text-sm font-bold text-white/70">{currency} {order.total?.toFixed(0)}</span>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {order.items?.map((item, i) => (
+                      <span key={i} className="text-xs bg-white/10 text-white/60 px-2 py-0.5 rounded-full">{item.name} ×{item.quantity}</span>
+                    ))}
+                  </div>
                 </div>
               );
             })}
@@ -433,7 +504,7 @@ function KitchenReports({ orders, kitchenName }) {
 }
 
 // ─── ORDER CARD ─────────────────────────────────────────────────────────────
-function OrderCard({ order, isPending, onAccept, onReject, onAction }) {
+function OrderCard({ order, isPending, onAccept, onReject, onAction, onCancel }) {
   const [timer, setTimer] = useState('');
   useEffect(() => {
     if (!order.estimatedTime) return;
@@ -520,7 +591,7 @@ function OrderCard({ order, isPending, onAccept, onReject, onAction }) {
       </div>
 
       {/* Action buttons */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         {isPending ? (
           <>
             <button onClick={onAccept} className="flex-1 py-2.5 rounded-xl bg-green-500 hover:bg-green-600 text-white font-bold text-sm transition-colors flex items-center justify-center gap-1">
@@ -530,12 +601,22 @@ function OrderCard({ order, isPending, onAccept, onReject, onAction }) {
               <FiX size={14} /> Reject
             </button>
           </>
-        ) : actions.map(action => (
-          <button key={action.next} onClick={() => onAction(action.next)}
-            className={`flex-1 py-2.5 rounded-xl ${action.color} text-white font-bold text-sm transition-colors`}>
-            {action.icon} <span className="hidden xs:inline sm:inline">{action.label}</span>
-          </button>
-        ))}
+        ) : (
+          <>
+            {actions.map(action => (
+              <button key={action.next} onClick={() => onAction(action.next)}
+                className={`flex-1 py-2.5 rounded-xl ${action.color} text-white font-bold text-sm transition-colors`}>
+                {action.icon} <span className="hidden xs:inline sm:inline">{action.label}</span>
+              </button>
+            ))}
+            {onCancel && (
+              <button onClick={onCancel}
+                className="py-2.5 px-3 rounded-xl bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 font-bold text-xs transition-colors border border-orange-500/30 flex items-center gap-1">
+                <FiAlertTriangle size={12} /> Cancel
+              </button>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
