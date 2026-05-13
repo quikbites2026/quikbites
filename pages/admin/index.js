@@ -14,11 +14,13 @@ import { FiLogOut, FiPlus, FiEdit2, FiTrash2, FiSave, FiX, FiMapPin, FiImage } f
 import ImageUploader from '../../components/ImageUploader';
 
 const TABS = [
-  { id: 'orders',   label: 'Orders',    icon: '📋' },
-  { id: 'menu',     label: 'Menu',      icon: '🍛' },
-  { id: 'reports',  label: 'Reports',   icon: '📊' },
-  { id: 'delivery', label: 'Delivery',  icon: '🛵' },
-  { id: 'settings', label: 'Settings',  icon: '⚙️' },
+  { id: 'orders',      label: 'Orders',     icon: '📋' },
+  { id: 'menu',        label: 'Menu',       icon: '🍛' },
+  { id: 'reports',     label: 'Reports',    icon: '📊' },
+  { id: 'search',      label: 'Order Search', icon: '🔍' },
+  { id: 'neworder',    label: 'New Order',  icon: '➕' },
+  { id: 'delivery',    label: 'Delivery',   icon: '🛵' },
+  { id: 'settings',    label: 'Settings',   icon: '⚙️' },
 ];
 
 export default function AdminPanel() {
@@ -110,6 +112,12 @@ export default function AdminPanel() {
             )}
             {tab === 'reports' && (
               <ReportsTab orders={orders} currency={settings?.currency || 'SBD'} menuItems={menuItems} />
+            )}
+            {tab === 'search' && (
+              <OrderSearchTab orders={orders} currency={settings?.currency || 'SBD'} />
+            )}
+            {tab === 'neworder' && (
+              <PlaceOrderTab settings={settings} categories={categories} menuItems={menuItems} />
             )}
             {tab === 'delivery' && (
               <DeliveryTab settings={settings} setSettings={setSettings} />
@@ -714,38 +722,29 @@ function SettingsTab({ settings, setSettings }) {
 function ReportsTab({ orders, currency, menuItems }) {
   const [period, setPeriod] = useState('today');
 
-  // Filter orders by period
   function getFilteredOrders() {
     const now = new Date();
     return orders.filter(o => {
-      if (o.status === 'rejected') return false;
       if (!o.createdAt) return false;
       const date = o.createdAt.toDate ? o.createdAt.toDate() : new Date(o.createdAt);
-      if (period === 'today') {
-        return date.toDateString() === now.toDateString();
-      } else if (period === 'week') {
-        const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
-        return date >= weekAgo;
-      } else if (period === 'month') {
-        return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
-      }
+      if (period === 'today') return date.toDateString() === now.toDateString();
+      if (period === 'week') return date >= new Date(now - 7 * 24 * 60 * 60 * 1000);
+      if (period === 'month') return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
       return true;
     });
   }
 
   const filtered = getFilteredOrders();
   const delivered = filtered.filter(o => o.status === 'delivered');
+  const rejected = filtered.filter(o => o.status === 'rejected');
   const totalRevenue = delivered.reduce((s, o) => s + (o.total || 0), 0);
   const totalOrders = filtered.length;
   const deliveredCount = delivered.length;
-  const pendingCount = filtered.filter(o => o.status === 'pending').length;
+  const rejectedCount = rejected.length;
   const avgOrder = deliveredCount > 0 ? totalRevenue / deliveredCount : 0;
 
-  // Payment method breakdown
   const codOrders = delivered.filter(o => o.paymentMethod === 'cod').length;
   const mselenOrders = delivered.filter(o => o.paymentMethod === 'mselen').length;
-
-  // Order type breakdown
   const deliveryOrders = filtered.filter(o => o.orderType === 'delivery').length;
   const pickupOrders = filtered.filter(o => o.orderType === 'pickup').length;
 
@@ -800,13 +799,19 @@ function ReportsTab({ orders, currency, menuItems }) {
           { label: 'Total Revenue', value: `${currency} ${totalRevenue.toFixed(0)}`, color: 'text-primary', bg: 'bg-orange-50' },
           { label: 'Total Orders', value: totalOrders, color: 'text-secondary', bg: 'bg-amber-50' },
           { label: 'Delivered', value: deliveredCount, color: 'text-green-700', bg: 'bg-green-50' },
-          { label: 'Avg Order Value', value: `${currency} ${avgOrder.toFixed(0)}`, color: 'text-blue-700', bg: 'bg-blue-50' },
+          { label: 'Rejected/Cancelled', value: rejectedCount, color: 'text-red-700', bg: 'bg-red-50' },
         ].map((card, i) => (
           <div key={i} className={`${card.bg} rounded-2xl p-3 sm:p-4`}>
             <p className="text-text-muted text-xs font-semibold mb-1">{card.label}</p>
             <p className={`font-black text-lg sm:text-xl ${card.color}`}>{card.value}</p>
           </div>
         ))}
+      </div>
+
+      {/* Avg order value */}
+      <div className="bg-blue-50 rounded-2xl p-3 sm:p-4">
+        <p className="text-text-muted text-xs font-semibold mb-1">Average Order Value</p>
+        <p className="font-black text-lg sm:text-xl text-blue-700">{currency} {avgOrder.toFixed(0)}</p>
       </div>
 
       {/* Order type + Payment breakdown */}
@@ -914,6 +919,392 @@ function ReportsTab({ orders, currency, menuItems }) {
           </div>
         )}
       </div>
+
+      {/* Rejected / Cancelled orders */}
+      <div className="bg-white rounded-2xl p-4 shadow-card">
+        <h3 className="font-display font-bold text-secondary mb-3 text-sm">❌ Rejected & Cancelled Orders</h3>
+        {rejected.length === 0 ? (
+          <p className="text-text-muted text-sm text-center py-4">No rejected orders for this period</p>
+        ) : (
+          <div className="space-y-2">
+            {rejected.map(order => {
+              const date = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt || 0);
+              return (
+                <div key={order.id} className="bg-red-50 rounded-xl p-3 border border-red-100">
+                  <div className="flex items-start justify-between gap-2 flex-wrap">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-secondary text-sm">{order.orderNumber}</span>
+                        {order.cancelledAfterAccept && (
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">Cancelled</span>
+                        )}
+                        {!order.cancelledAfterAccept && (
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700">Rejected</span>
+                        )}
+                        <span className="text-xs text-text-muted">{order.orderType === 'pickup' ? '🏃 Pickup' : '🛵 Delivery'}</span>
+                      </div>
+                      <p className="text-xs text-text-muted mt-0.5">
+                        {order.customer?.name} · {order.customer?.phone} · {date.toLocaleDateString()} {date.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}
+                      </p>
+                      {order.rejectionReason && (
+                        <p className="text-xs text-red-600 mt-1 font-semibold">Reason: {order.rejectionReason}</p>
+                      )}
+                    </div>
+                    <span className="text-sm font-bold text-secondary flex-shrink-0">{currency} {order.total?.toFixed(0)}</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {order.items?.map((item, i) => (
+                      <span key={i} className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                        {item.name} ×{item.quantity}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── ORDER SEARCH TAB ──────────────────────────────────────────────────────
+function OrderSearchTab({ orders, currency }) {
+  const [query, setQuery] = useState('');
+  const [result, setResult] = useState(null);
+  const [searched, setSearched] = useState(false);
+
+  function handleSearch() {
+    if (!query.trim()) return;
+    setSearched(true);
+    const q = query.trim().toUpperCase();
+    const found = orders.find(o =>
+      o.orderNumber?.toUpperCase() === q ||
+      o.id?.toLowerCase() === query.trim().toLowerCase()
+    );
+    setResult(found || null);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-2xl p-4 shadow-card">
+        <h3 className="font-display font-bold text-secondary mb-1 text-sm">🔍 Search Order by ID</h3>
+        <p className="text-text-muted text-xs mb-3">Enter the order number (e.g. QB-123456) to find full order details for customer support.</p>
+        <div className="flex gap-2">
+          <input
+            value={query}
+            onChange={e => { setQuery(e.target.value); setSearched(false); }}
+            onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            placeholder="e.g. QB-123456"
+            className="flex-1 bg-bg-warm border border-orange-100 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary"
+          />
+          <button onClick={handleSearch} className="btn-primary px-5 py-2.5 rounded-xl text-sm">
+            Search
+          </button>
+        </div>
+      </div>
+
+      {/* No result */}
+      {searched && !result && (
+        <div className="bg-white rounded-2xl p-6 shadow-card text-center">
+          <p className="text-3xl mb-2">😕</p>
+          <p className="font-semibold text-secondary">No order found</p>
+          <p className="text-text-muted text-xs mt-1">Check the order number and try again</p>
+        </div>
+      )}
+
+      {/* Result */}
+      {result && (
+        <div className="bg-white rounded-2xl p-4 shadow-card space-y-4">
+          {/* Header */}
+          <div className="flex items-start justify-between gap-2 pb-3 border-b border-orange-100 flex-wrap">
+            <div>
+              <h3 className="font-display font-bold text-secondary text-lg">{result.orderNumber}</h3>
+              <p className="text-text-muted text-xs">Order ID: {result.id}</p>
+            </div>
+            <span className={`text-xs font-bold px-3 py-1 rounded-full ${STATUS_COLORS[result.status]}`}>
+              {result.status?.replace('_',' ').toUpperCase()}
+            </span>
+          </div>
+
+          {/* Customer details */}
+          <div>
+            <p className="text-xs font-bold text-text-muted mb-2">👤 CUSTOMER DETAILS</p>
+            <div className="bg-orange-50 rounded-xl p-3 space-y-1 text-sm">
+              <p><span className="text-text-muted">Name:</span> <span className="font-semibold">{result.customer?.name}</span></p>
+              <p><span className="text-text-muted">Phone:</span> <span className="font-semibold">{result.customer?.phone}</span></p>
+              {result.customer?.email && <p><span className="text-text-muted">Email:</span> <span className="font-semibold">{result.customer.email}</span></p>}
+              {result.customer?.address && <p><span className="text-text-muted">Address:</span> <span className="font-semibold">{result.customer.address}{result.customer.unit ? `, ${result.customer.unit}` : ''}</span></p>}
+              {result.deliveryArea && <p><span className="text-text-muted">Area:</span> <span className="font-semibold">{result.deliveryArea}</span></p>}
+              {result.customer?.notes && <p><span className="text-text-muted">Notes:</span> <span className="font-semibold">{result.customer.notes}</span></p>}
+            </div>
+          </div>
+
+          {/* Order items */}
+          <div>
+            <p className="text-xs font-bold text-text-muted mb-2">🍛 ORDER ITEMS</p>
+            <div className="space-y-1.5">
+              {result.items?.map((item, i) => (
+                <div key={i} className="flex justify-between text-sm">
+                  <span className="text-text-main">{item.name} <span className="text-text-muted">×{item.quantity}</span></span>
+                  <span className="font-semibold">{currency} {(item.discountedPrice * item.quantity).toFixed(0)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Payment & totals */}
+          <div>
+            <p className="text-xs font-bold text-text-muted mb-2">💳 PAYMENT & TOTALS</p>
+            <div className="bg-orange-50 rounded-xl p-3 space-y-1 text-sm">
+              <div className="flex justify-between"><span className="text-text-muted">Subtotal</span><span>{currency} {result.subtotal?.toFixed(0)}</span></div>
+              <div className="flex justify-between">
+                <span className="text-text-muted">Delivery</span>
+                <span>{result.orderType === 'pickup' ? 'Pickup' : result.deliveryWaived ? '🎁 Waived' : result.deliveryFee === 0 ? 'FREE' : `${currency} ${result.deliveryFee}`}</span>
+              </div>
+              {result.onlineDiscount > 0 && (
+                <div className="flex justify-between text-green-600"><span>Online Discount</span><span>− {currency} {result.onlineDiscount?.toFixed(0)}</span></div>
+              )}
+              <div className="flex justify-between font-black text-base pt-1 border-t border-orange-100">
+                <span>Total</span>
+                <span className="text-primary">{currency} {(
+                  (result.subtotal || 0) +
+                  (result.deliveryWaived ? 0 : (result.deliveryFee || 0)) -
+                  (result.onlineDiscount || 0)
+                ).toFixed(0)}</span>
+              </div>
+              <div className="pt-1 border-t border-orange-100">
+                <p><span className="text-text-muted">Payment:</span> <span className="font-semibold">{result.paymentMethod === 'cod' ? 'Cash on Delivery' : 'M-SELEN'}</span></p>
+                <p><span className="text-text-muted">Type:</span> <span className="font-semibold">{result.orderType === 'pickup' ? '🏃 Pickup' : '🛵 Delivery'}</span></p>
+              </div>
+            </div>
+          </div>
+
+          {/* Timestamps */}
+          <div>
+            <p className="text-xs font-bold text-text-muted mb-2">⏱ TIMESTAMPS</p>
+            <div className="bg-orange-50 rounded-xl p-3 space-y-1 text-sm">
+              {result.createdAt && (
+                <p><span className="text-text-muted">Ordered:</span> <span className="font-semibold">
+                  {(result.createdAt.toDate ? result.createdAt.toDate() : new Date(result.createdAt)).toLocaleString()}
+                </span></p>
+              )}
+              {result.updatedAt && (
+                <p><span className="text-text-muted">Last Updated:</span> <span className="font-semibold">
+                  {(result.updatedAt.toDate ? result.updatedAt.toDate() : new Date(result.updatedAt)).toLocaleString()}
+                </span></p>
+              )}
+              {result.estimatedTime && (
+                <p><span className="text-text-muted">Est. Delivery:</span> <span className="font-semibold">
+                  {new Date(result.estimatedTime).toLocaleTimeString()}
+                </span></p>
+              )}
+            </div>
+          </div>
+
+          {/* Rejection reason if rejected */}
+          {result.status === 'rejected' && result.rejectionReason && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+              <p className="text-xs font-bold text-red-700 mb-1">
+                {result.cancelledAfterAccept ? '⚠️ CANCELLATION REASON' : '❌ REJECTION REASON'}
+              </p>
+              <p className="text-sm text-red-800">{result.rejectionReason}</p>
+            </div>
+          )}
+
+          {/* Contact customer */}
+          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-orange-100">
+            <a href={`https://wa.me/677${result.customer?.phone}?text=${encodeURIComponent(`Hi ${result.customer?.name}, regarding your QuikBites order ${result.orderNumber}`)}`}
+              target="_blank" rel="noreferrer"
+              className="flex flex-col items-center gap-1 bg-green-50 hover:bg-green-100 border border-green-200 text-green-800 font-bold text-xs py-2.5 rounded-xl">
+              <span style={{fontSize:'18px'}}>💬</span> WhatsApp
+            </a>
+            <a href={`sms:${result.customer?.phone}`}
+              className="flex flex-col items-center gap-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-800 font-bold text-xs py-2.5 rounded-xl">
+              <span style={{fontSize:'18px'}}>📱</span> SMS
+            </a>
+            <a href={`tel:${result.customer?.phone}`}
+              className="flex flex-col items-center gap-1 bg-orange-50 hover:bg-orange-100 border border-orange-200 text-primary font-bold text-xs py-2.5 rounded-xl">
+              <span style={{fontSize:'18px'}}>📞</span> Call
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PLACE ORDER TAB (on behalf of customer) ───────────────────────────────
+function PlaceOrderTab({ settings, categories, menuItems }) {
+  const [cart, setCart] = useState({});
+  const [orderType, setOrderType] = useState('delivery');
+  const [selectedArea, setSelectedArea] = useState(settings?.deliveryAreas?.[0]?.id || '');
+  const [form, setForm] = useState({ name: '', phone: '', address: '', email: '', notes: '', unit: '' });
+  const [placing, setPlacing] = useState(false);
+  const [successOrder, setSuccessOrder] = useState(null);
+  const currency = settings?.currency || 'SBD';
+  const freeThreshold = settings?.freeDeliveryThreshold || 100;
+  const area = settings?.deliveryAreas?.find(a => a.id === selectedArea);
+  const subtotal = Object.entries(cart).reduce((s, [id, qty]) => {
+    const item = menuItems.find(m => m.id === id);
+    if (!item) return s;
+    const price = item.discountPercent > 0 ? item.price - item.price * item.discountPercent / 100 : item.price;
+    return s + price * qty;
+  }, 0);
+  const deliveryFee = orderType === 'pickup' ? 0 : (subtotal >= freeThreshold ? 0 : (area?.fee || settings?.defaultDeliveryFee || 10));
+  const total = subtotal + deliveryFee;
+  const itemCount = Object.values(cart).reduce((s, q) => s + q, 0);
+
+  function changeQty(id, delta) {
+    setCart(prev => {
+      const newQty = Math.max(0, (prev[id] || 0) + delta);
+      if (newQty === 0) { const n = {...prev}; delete n[id]; return n; }
+      return { ...prev, [id]: newQty };
+    });
+  }
+
+  async function handlePlace() {
+    if (!form.name || !form.phone) { toast.error('Name and phone required'); return; }
+    if (Object.keys(cart).length === 0) { toast.error('Please add items to the order'); return; }
+    setPlacing(true);
+    try {
+      const { createOrder: placeOrder } = await import('../lib/firebaseHelpers');
+      const items = Object.entries(cart).map(([id, qty]) => {
+        const item = menuItems.find(m => m.id === id);
+        const discountedPrice = item.discountPercent > 0 ? item.price - item.price * item.discountPercent / 100 : item.price;
+        return { id, name: item.name, price: item.price, discountPercent: item.discountPercent || 0, discountedPrice, quantity: qty };
+      });
+      const orderData = {
+        items, customer: { ...form },
+        orderType, paymentMethod: 'cod',
+        deliveryArea: orderType === 'delivery' ? (area?.name || '') : '',
+        subtotal, deliveryFee, onlineDiscount: 0, total, currency,
+        placedByAdmin: true,
+      };
+      const { id, orderNumber } = await placeOrder(orderData);
+      setSuccessOrder({ id, orderNumber, phone: form.phone, name: form.name });
+      setCart({}); setForm({ name: '', phone: '', address: '', email: '', notes: '', unit: '' });
+      toast.success(`Order ${orderNumber} placed!`);
+    } catch (err) {
+      console.error(err); toast.error('Failed to place order');
+    } finally { setPlacing(false); }
+  }
+
+  const inp = "w-full bg-bg-warm border border-orange-100 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary";
+  const activeCats = categories.filter(c => c.active);
+
+  return (
+    <div className="space-y-4">
+      {/* Success */}
+      {successOrder && (
+        <div className="bg-green-50 border-2 border-green-200 rounded-2xl p-4">
+          <p className="font-bold text-green-800 text-base mb-1">✅ Order {successOrder.orderNumber} placed!</p>
+          <p className="text-green-700 text-sm mb-3">Share the tracking link with {successOrder.name}:</p>
+          <div className="flex gap-2 flex-wrap">
+            <a href={`https://wa.me/677${successOrder.phone}?text=${encodeURIComponent(`Hi ${successOrder.name}, your QuikBites order ${successOrder.orderNumber} has been placed! Track it here: ${typeof window !== 'undefined' ? window.location.origin : ''}/track/${successOrder.id}`)}`}
+              target="_blank" rel="noreferrer"
+              className="flex items-center gap-1.5 bg-green-600 text-white font-bold text-xs px-3 py-2 rounded-xl">
+              💬 Send via WhatsApp
+            </a>
+            <a href={`sms:${successOrder.phone}?body=${encodeURIComponent(`Your QuikBites order ${successOrder.orderNumber} is placed! Track: ${typeof window !== 'undefined' ? window.location.origin : ''}/track/${successOrder.id}`)}`}
+              className="flex items-center gap-1.5 bg-blue-600 text-white font-bold text-xs px-3 py-2 rounded-xl">
+              📱 Send via SMS
+            </a>
+            <button onClick={() => { navigator.clipboard.writeText(`${typeof window !== 'undefined' ? window.location.origin : ''}/track/${successOrder.id}`); toast.success('Link copied!'); }}
+              className="flex items-center gap-1.5 bg-secondary text-white font-bold text-xs px-3 py-2 rounded-xl">
+              🔗 Copy Link
+            </button>
+          </div>
+          <button onClick={() => setSuccessOrder(null)} className="mt-3 text-xs text-green-700 hover:underline">
+            Place another order
+          </button>
+        </div>
+      )}
+
+      {/* Customer details */}
+      <div className="bg-white rounded-2xl p-4 shadow-card space-y-3">
+        <h3 className="font-display font-bold text-secondary text-sm">👤 Customer Details</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div><label className="text-xs font-bold text-text-muted mb-1 block">Name *</label><input value={form.name} onChange={e => setForm(p=>({...p,name:e.target.value}))} placeholder="Customer name" className={inp} /></div>
+          <div><label className="text-xs font-bold text-text-muted mb-1 block">Phone *</label><input value={form.phone} onChange={e => setForm(p=>({...p,phone:e.target.value}))} placeholder="Phone number" className={inp} /></div>
+        </div>
+
+        {/* Order type */}
+        <div className="grid grid-cols-2 gap-2">
+          {['delivery','pickup'].map(t => (
+            <button key={t} type="button" onClick={() => setOrderType(t)}
+              className={`p-2.5 rounded-xl border-2 text-sm font-bold transition-all capitalize ${orderType === t ? 'border-primary bg-orange-50 text-secondary' : 'border-orange-100 text-text-muted'}`}>
+              {t === 'delivery' ? '🛵 Delivery' : '🏃 Pickup'}
+            </button>
+          ))}
+        </div>
+
+        {orderType === 'delivery' && (
+          <>
+            <div><label className="text-xs font-bold text-text-muted mb-1 block">Delivery Area</label>
+              <select value={selectedArea} onChange={e => setSelectedArea(e.target.value)} className={inp}>
+                {settings?.deliveryAreas?.map(a => <option key={a.id} value={a.id}>{a.name} — {currency} {a.fee}</option>)}
+              </select>
+            </div>
+            <div><label className="text-xs font-bold text-text-muted mb-1 block">Address</label><input value={form.address} onChange={e => setForm(p=>({...p,address:e.target.value}))} placeholder="Delivery address" className={inp} /></div>
+          </>
+        )}
+        <div><label className="text-xs font-bold text-text-muted mb-1 block">Notes (optional)</label><textarea value={form.notes} onChange={e => setForm(p=>({...p,notes:e.target.value}))} rows={2} placeholder="Special instructions..." className={`${inp} resize-none`} /></div>
+      </div>
+
+      {/* Menu items */}
+      <div className="bg-white rounded-2xl p-4 shadow-card">
+        <h3 className="font-display font-bold text-secondary text-sm mb-3">🍛 Select Items</h3>
+        {activeCats.map(cat => {
+          const catItems = menuItems.filter(i => i.categoryId === cat.id && i.available);
+          if (!catItems.length) return null;
+          return (
+            <div key={cat.id} className="mb-4">
+              <p className="text-xs font-bold text-text-muted mb-2">{cat.emoji} {cat.name}</p>
+              <div className="space-y-2">
+                {catItems.map(item => {
+                  const qty = cart[item.id] || 0;
+                  const price = item.discountPercent > 0 ? item.price - item.price * item.discountPercent / 100 : item.price;
+                  return (
+                    <div key={item.id} className="flex items-center justify-between gap-2 py-1.5 border-b border-orange-50 last:border-0">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-secondary truncate">{item.name}</p>
+                        <p className="text-xs text-primary font-bold">{currency} {price.toFixed(0)}</p>
+                      </div>
+                      {qty === 0 ? (
+                        <button onClick={() => changeQty(item.id, 1)} className="btn-primary px-3 py-1.5 rounded-xl text-xs flex-shrink-0">+ Add</button>
+                      ) : (
+                        <div className="flex items-center gap-1 bg-primary/10 rounded-xl overflow-hidden flex-shrink-0">
+                          <button onClick={() => changeQty(item.id, -1)} className="p-1.5 hover:bg-primary/20 text-primary text-sm">−</button>
+                          <span className="font-bold text-secondary text-sm px-1 min-w-[18px] text-center">{qty}</span>
+                          <button onClick={() => changeQty(item.id, 1)} className="p-1.5 hover:bg-primary/20 text-primary text-sm">+</button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Order summary */}
+      {itemCount > 0 && (
+        <div className="bg-white rounded-2xl p-4 shadow-card">
+          <h3 className="font-display font-bold text-secondary text-sm mb-3">🧾 Order Summary</h3>
+          <div className="space-y-1 text-sm mb-3">
+            <div className="flex justify-between"><span className="text-text-muted">Subtotal</span><span>{currency} {subtotal.toFixed(0)}</span></div>
+            <div className="flex justify-between"><span className="text-text-muted">Delivery</span><span className={deliveryFee === 0 ? 'text-green-600 font-semibold' : ''}>{orderType === 'pickup' ? 'Pickup (Free)' : deliveryFee === 0 ? 'FREE 🎉' : `${currency} ${deliveryFee}`}</span></div>
+            <div className="flex justify-between font-black text-base pt-1 border-t border-orange-100"><span>Total</span><span className="text-primary">{currency} {total.toFixed(0)}</span></div>
+          </div>
+          <button onClick={handlePlace} disabled={placing || !form.name || !form.phone}
+            className="btn-primary w-full py-3 rounded-xl font-black text-sm disabled:opacity-50">
+            {placing ? 'Placing Order...' : `📞 Place Order — ${currency} ${total.toFixed(0)}`}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
