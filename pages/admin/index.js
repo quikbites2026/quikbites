@@ -7,7 +7,7 @@ import {
   getSettings, updateSettings,
   getCategories, addCategory, updateCategory, deleteCategory,
   getMenuItems, addMenuItem, updateMenuItem, deleteMenuItem,
-  subscribeToAllOrders,
+  subscribeToAllOrders, createOrder,
 } from '../../lib/firebaseHelpers';
 import toast from 'react-hot-toast';
 import { FiLogOut, FiPlus, FiEdit2, FiTrash2, FiSave, FiX, FiMapPin, FiImage } from 'react-icons/fi';
@@ -1169,11 +1169,10 @@ function PlaceOrderTab({ settings, categories, menuItems }) {
     if (Object.keys(cart).length === 0) { toast.error('Please add items to the order'); return; }
     setPlacing(true);
     try {
-      const { createOrder: placeOrder } = await import('../lib/firebaseHelpers');
-      const items = Object.entries(cart).map(([id, qty]) => {
-        const item = menuItems.find(m => m.id === id);
+      const items = Object.entries(cart).map(([itemId, qty]) => {
+        const item = menuItems.find(m => m.id === itemId);
         const discountedPrice = item.discountPercent > 0 ? item.price - item.price * item.discountPercent / 100 : item.price;
-        return { id, name: item.name, price: item.price, discountPercent: item.discountPercent || 0, discountedPrice, quantity: qty };
+        return { id: itemId, name: item.name, price: item.price, discountPercent: item.discountPercent || 0, discountedPrice, quantity: qty };
       });
       const orderData = {
         items, customer: { ...form },
@@ -1182,7 +1181,7 @@ function PlaceOrderTab({ settings, categories, menuItems }) {
         subtotal, deliveryFee, onlineDiscount: 0, total, currency,
         placedByAdmin: true,
       };
-      const { id, orderNumber } = await placeOrder(orderData);
+      const { id, orderNumber } = await createOrder(orderData);
       setSuccessOrder({ id, orderNumber, phone: form.phone, name: form.name });
       setCart({}); setForm({ name: '', phone: '', address: '', email: '', notes: '', unit: '' });
       toast.success(`Order ${orderNumber} placed!`);
