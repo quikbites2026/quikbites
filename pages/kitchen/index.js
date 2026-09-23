@@ -25,7 +25,6 @@ const STATUS_ACTIONS = {
   out_for_delivery: [{ label: 'Mark Delivered', next: 'delivered', color: 'bg-green-500 hover:bg-green-600', icon: '🎉' }],
 };
 
-// Cancellable statuses — any active order except pending (pending has reject already)
 const CANCELLABLE_STATUSES = ['accepted', 'preparing', 'ready', 'out_for_delivery'];
 
 const STATUS_COLORS = {
@@ -51,7 +50,6 @@ export default function Kitchen() {
   const [waiveDelivery, setWaiveDelivery] = useState(false);
   const prevOrderIds = useRef(new Set());
 
-  // Auth guard — get kitchenId from logged-in email
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, u => {
       if (!u) { router.push('/login?role=kitchen'); return; }
@@ -62,7 +60,6 @@ export default function Kitchen() {
     return () => unsub();
   }, [router]);
 
-  // Subscribe to this kitchen's active orders only
   useEffect(() => {
     if (!user) return;
     const kid = getKitchenId(user.email);
@@ -75,7 +72,6 @@ export default function Kitchen() {
       setLoading(false);
     });
 
-    // Subscribe to all orders for this kitchen (for reports)
     const unsubAll = subscribeToKitchenOrders(kid, setAllOrders);
 
     return () => { unsubActive(); unsubAll(); };
@@ -116,7 +112,7 @@ export default function Kitchen() {
   }
 
   async function handleCancel(orderId) {
-    await handleAction(orderId, 'rejected', { 
+    await handleAction(orderId, 'rejected', {
       rejectionReason: cancelReason || 'Order cancelled by kitchen',
       cancelledAfterAccept: true,
     });
@@ -355,7 +351,6 @@ function KitchenReports({ orders, kitchenName }) {
 
   return (
     <div className="max-w-2xl mx-auto px-3 py-4 space-y-4">
-      {/* Period selector */}
       <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
         {[
           { id: 'today', label: 'Today' },
@@ -372,7 +367,6 @@ function KitchenReports({ orders, kitchenName }) {
         ))}
       </div>
 
-      {/* Summary cards */}
       <div className="grid grid-cols-2 gap-3">
         <div className={cardClass}>
           <p className="text-white/50 text-xs font-semibold mb-1">Total Revenue</p>
@@ -392,13 +386,11 @@ function KitchenReports({ orders, kitchenName }) {
         </div>
       </div>
 
-      {/* Avg order value */}
       <div className={cardClass}>
         <p className="text-white/50 text-xs font-semibold mb-1">Average Order Value</p>
         <p className="font-black text-green-400 text-xl">{currency} {avgOrder.toFixed(0)}</p>
       </div>
 
-      {/* Order type breakdown */}
       <div className={cardClass}>
         <h3 className="font-bold text-white text-sm mb-3">🛵 Delivery vs Pickup</h3>
         <div className="space-y-2">
@@ -420,7 +412,6 @@ function KitchenReports({ orders, kitchenName }) {
         </div>
       </div>
 
-      {/* Top selling items */}
       <div className={cardClass}>
         <h3 className="font-bold text-white text-sm mb-3">🏆 Top Selling Items</h3>
         {topItems.length === 0 ? (
@@ -446,7 +437,6 @@ function KitchenReports({ orders, kitchenName }) {
         )}
       </div>
 
-      {/* Recent completed orders */}
       <div className={cardClass}>
         <h3 className="font-bold text-white text-sm mb-3">🕐 Recent Completed Orders</h3>
         {recentDelivered.length === 0 ? (
@@ -469,7 +459,6 @@ function KitchenReports({ orders, kitchenName }) {
         )}
       </div>
 
-      {/* Rejected / Cancelled orders */}
       <div className={cardClass}>
         <h3 className="font-bold text-white text-sm mb-3">❌ Rejected & Cancelled Orders</h3>
         {rejected.length === 0 ? (
@@ -506,6 +495,8 @@ function KitchenReports({ orders, kitchenName }) {
 // ─── ORDER CARD ─────────────────────────────────────────────────────────────
 function OrderCard({ order, isPending, onAccept, onReject, onAction, onCancel }) {
   const [timer, setTimer] = useState('');
+  const [ago, setAgo] = useState('');
+
   useEffect(() => {
     if (!order.estimatedTime) return;
     const interval = setInterval(() => {
@@ -516,6 +507,36 @@ function OrderCard({ order, isPending, onAccept, onReject, onAction, onCancel })
     }, 1000);
     return () => clearInterval(interval);
   }, [order.estimatedTime]);
+
+  // When the order was placed — fall back to now if Firebase timestamp not yet resolved
+  const placedAt = order.createdAt?.toDate
+    ? order.createdAt.toDate()
+    : order.createdAt
+      ? new Date(order.createdAt)
+      : new Date();
+
+  useEffect(() => {
+    function tick() {
+      const mins = Math.floor((Date.now() - placedAt.getTime()) / 60000);
+      if (mins < 1) setAgo('just now');
+      else if (mins < 60) setAgo(`${mins} min ago`);
+      else {
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        setAgo(m > 0 ? `${h}h ${m}m ago` : `${h}h ago`);
+      }
+    }
+    tick();
+    const interval = setInterval(tick, 30000);
+    return () => clearInterval(interval);
+  }, [placedAt.getTime()]);
+
+  const waitingMins = Math.floor((Date.now() - placedAt.getTime()) / 60000);
+  const agoTone = isPending && waitingMins >= 10
+    ? 'bg-red-500/30 text-red-200 border-red-400/40'
+    : isPending && waitingMins >= 5
+      ? 'bg-amber-500/25 text-amber-200 border-amber-400/40'
+      : 'bg-white/10 text-white/70 border-white/15';
 
   const getActions = () => {
     if (order.status === 'ready') {
@@ -552,6 +573,21 @@ function OrderCard({ order, isPending, onAccept, onReject, onAction, onCancel })
             {order.deliveryWaived && <span className="text-xs text-green-300 font-semibold">🎁 Fee Waived</span>}
           </div>
           <p className="text-white/60 text-xs mt-0.5">{order.customer?.name} · {order.customer?.phone}</p>
+
+          {/* Timestamp + ago badge */}
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            <span className="text-xs text-white/70 flex items-center gap-1">
+              <FiClock size={10} />
+              {placedAt.toLocaleDateString([], { day: 'numeric', month: 'short' })}
+              {' · '}
+              {placedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+            </span>
+            {ago && (
+              <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full border ${agoTone}`}>
+                {ago}
+              </span>
+            )}
+          </div>
         </div>
         <div className="text-right flex-shrink-0">
           <p className="font-black text-accent text-base sm:text-lg">{currency} {order.total?.toFixed(0)}</p>
