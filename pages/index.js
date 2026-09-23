@@ -3,7 +3,8 @@ import Head from 'next/head';
 import Header from '../components/Header';
 import MenuCard from '../components/MenuCard';
 import CartSidebar from '../components/CartSidebar';
-import { getSettings, getCategories, getMenuItems, seedDatabase } from '../lib/firebaseHelpers';
+import { getSettings, getCategories, getMenuItems, seedDatabase, subscribeToSettings } from '../lib/firebaseHelpers';
+import { getServiceState, formatServiceTime } from '../lib/serviceStatus';
 
 export default function Home() {
   const [settings, setSettings] = useState(null);
@@ -76,6 +77,21 @@ export default function Home() {
     loadData();
   }, []);
 
+  // Live settings — picks up an admin service stop/resume without a refresh
+  useEffect(() => {
+    const unsub = subscribeToSettings(s => setSettings(s));
+    return () => unsub();
+  }, []);
+
+  // Re-evaluate every 30s so a scheduled pause starts/ends on its own
+  const [, serviceTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => serviceTick(n => n + 1), 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  const service = getServiceState(settings);
+
   const activeCats = categories.filter(c => c.active);
   const filteredItems = menuItems.filter(item => {
     const matchCat = activeCategory === 'all' || item.categoryId === activeCategory;
@@ -111,12 +127,58 @@ export default function Home() {
           <p className="text-white/60 text-sm max-w-md mx-auto">
             Freshly cooked & delivered in Honiara. Free delivery over {currency} {settings?.freeDeliveryThreshold || 100}!
           </p>
-          {!isOpen && (
+          {!isOpen && !service.suspended && (
             <div className="mt-4 inline-block bg-red-500/20 border border-red-400/30 text-red-200 text-sm font-semibold px-4 py-2 rounded-full">
               😴 We&apos;re currently closed. Come back during opening hours!
             </div>
           )}
         </div>
+
+        {/* Service suspended — notice board, ordering disabled */}
+        {service.suspended && (
+          <div className="bg-red-50 border-b-2 border-red-200">
+            <div className="max-w-3xl mx-auto px-4 py-5 text-center">
+              <span className="text-4xl">🚧</span>
+              <h2 className="font-display font-bold text-red-800 text-lg sm:text-xl mt-2">
+                Ordering is temporarily unavailable
+              </h2>
+              <p className="text-red-700 text-sm mt-2 max-w-xl mx-auto leading-relaxed whitespace-pre-line">
+                {service.notice}
+              </p>
+              {service.resumeFrom && (
+                <p className="text-red-800 text-sm font-bold mt-3">
+                  ⏰ We expect to resume at {formatServiceTime(service.resumeFrom)}
+                </p>
+              )}
+              <div className="mt-4 flex items-center justify-center gap-2 flex-wrap">
+                <a href={`https://wa.me/6777348123?text=${encodeURIComponent('Hi QuikBites, I have a question about your service.')}`}
+                  target="_blank" rel="noreferrer"
+                  className="bg-green-600 hover:bg-green-700 text-white font-bold text-xs px-4 py-2 rounded-full transition-colors">
+                  💬 WhatsApp us
+                </a>
+                <a href="tel:7348123"
+                  className="bg-primary hover:bg-primary-dark text-white font-bold text-xs px-4 py-2 rounded-full transition-colors">
+                  📞 Call 7348123
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Scheduled pause coming up — heads-up while still open */}
+        {!service.suspended && service.upcoming && (
+          <div className="bg-amber-50 border-b border-amber-200">
+            <div className="max-w-3xl mx-auto px-4 py-3 text-center">
+              <p className="text-amber-800 text-sm font-bold">
+                ⏰ Heads up — we pause new orders from {formatServiceTime(service.stopFrom)}
+                {service.resumeFrom ? ` until ${formatServiceTime(service.resumeFrom)}` : ''}
+              </p>
+              {service.notice && (
+                <p className="text-amber-700 text-xs mt-1 whitespace-pre-line">{service.notice}</p>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* PWA Install Banner */}
         {showInstallBanner && (
@@ -227,7 +289,7 @@ export default function Home() {
               {/* Responsive grid: 2 cols on mobile, 3 on tablet, 4 on desktop */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-4">
                 {cat.items.map(item => (
-                  <MenuCard key={item.id} item={item} currency={currency} />
+                  <MenuCard key={item.id} item={item} currency={currency} suspended={service.suspended} />
                 ))}
               </div>
             </div>
