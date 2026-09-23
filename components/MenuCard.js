@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useCart } from '../context/CartContext';
 import { FiPlus, FiMinus, FiChevronDown, FiChevronUp } from 'react-icons/fi';
 
-export default function MenuCard({ item, currency = 'SBD' }) {
+export default function MenuCard({ item, currency = 'SBD', orderingDisabled = false }) {
   const { addItem, items, updateQuantity } = useCart();
   const [adding, setAdding] = useState(false);
   const [showFullDesc, setShowFullDesc] = useState(false);
@@ -87,7 +87,7 @@ export default function MenuCard({ item, currency = 'SBD' }) {
             )}
           </div>
 
-          {item.available && (
+          {item.available && !suspended && (
             qty === 0 ? (
               <button
                 onClick={handleAdd}
@@ -116,6 +116,11 @@ export default function MenuCard({ item, currency = 'SBD' }) {
                 </button>
               </div>
             )
+          )}
+          {item.available && suspended && (
+            <span className="text-xs font-bold text-text-muted bg-orange-50 px-2 py-1 rounded-lg flex-shrink-0">
+              Paused
+            </span>
           )}
         </div>
       </div>
