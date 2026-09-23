@@ -12,6 +12,16 @@ import {
 import toast from 'react-hot-toast';
 import { FiLogOut, FiPlus, FiEdit2, FiTrash2, FiSave, FiX, FiMapPin, FiImage } from 'react-icons/fi';
 import ImageUploader from '../../components/ImageUploader';
+import {
+  getServiceState, formatServiceTime, msToLocalInput, localInputToMs,
+  DEFAULT_NOTICE, DEFAULT_SERVICE_STATUS,
+} from '../../lib/serviceStatus';
+
+const STATUS_COLORS = {
+  pending: 'status-pending', accepted: 'status-accepted', preparing: 'status-preparing',
+  ready: 'status-ready', out_for_delivery: 'status-out_for_delivery',
+  delivered: 'status-delivered', rejected: 'status-rejected',
+};
 
 const TABS = [
   { id: 'orders',      label: 'Orders',     icon: '📋' },
@@ -20,6 +30,7 @@ const TABS = [
   { id: 'search',      label: 'Order Search', icon: '🔍' },
   { id: 'neworder',    label: 'New Order',  icon: '➕' },
   { id: 'delivery',    label: 'Delivery',   icon: '🛵' },
+  { id: 'service',     label: 'Service',    icon: '🚦' },
   { id: 'settings',    label: 'Settings',   icon: '⚙️' },
 ];
 
@@ -121,6 +132,9 @@ export default function AdminPanel() {
             )}
             {tab === 'delivery' && (
               <DeliveryTab settings={settings} setSettings={setSettings} />
+            )}
+            {tab === 'service' && (
+              <ServiceTab settings={settings} setSettings={setSettings} />
             )}
             {tab === 'settings' && (
               <SettingsTab settings={settings} setSettings={setSettings} />
@@ -768,12 +782,6 @@ function ReportsTab({ orders, currency, menuItems }) {
     return db - da;
   }).slice(0, 5);
 
-  const STATUS_COLORS = {
-    pending: 'status-pending', accepted: 'status-accepted', preparing: 'status-preparing',
-    ready: 'status-ready', out_for_delivery: 'status-out_for_delivery',
-    delivered: 'status-delivered', rejected: 'status-rejected',
-  };
-
   return (
     <div className="space-y-5">
       {/* Period selector */}
@@ -1304,6 +1312,192 @@ function PlaceOrderTab({ settings, categories, menuItems }) {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── SERVICE CONTROL TAB ───────────────────────────────────────────────────
+function ServiceTab({ settings, setSettings }) {
+  const current = settings?.serviceStatus || DEFAULT_SERVICE_STATUS;
+  const [mode, setMode] = useState(current.mode || 'open');
+  const [notice, setNotice] = useState(current.notice || '');
+  const [stopFrom, setStopFrom] = useState(msToLocalInput(current.stopFrom));
+  const [resumeFrom, setResumeFrom] = useState(msToLocalInput(current.resumeFrom));
+  const [saving, setSaving] = useState(false);
+  const [, forceTick] = useState(0);
+
+  // Refresh the live status card every 30s so a scheduled window flips on its own
+  useEffect(() => {
+    const t = setInterval(() => forceTick(n => n + 1), 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  const live = getServiceState(settings);
+
+  async function persist(next) {
+    setSaving(true);
+    try {
+      await updateSettings({ serviceStatus: next });
+      setSettings(p => ({ ...p, serviceStatus: next }));
+      return true;
+    } catch (e) {
+      console.error(e);
+      toast.error('Failed to save. Please try again.');
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function stopNow() {
+    if (!notice.trim()) { toast.error('Please write a notice for your customers first'); return; }
+    const next = { mode: 'stopped', notice: notice.trim(), stopFrom: null, resumeFrom: null };
+    if (await persist(next)) { setMode('stopped'); toast.success('Service stopped — customers can no longer order'); }
+  }
+
+  async function resumeNow() {
+    const next = { mode: 'open', notice: '', stopFrom: null, resumeFrom: null };
+    if (await persist(next)) {
+      setMode('open'); setNotice(''); setStopFrom(''); setResumeFrom('');
+      toast.success('Service resumed — customers can order again');
+    }
+  }
+
+  async function saveSchedule() {
+    if (!notice.trim()) { toast.error('Please write a notice for your customers'); return; }
+    const from = localInputToMs(stopFrom);
+    const until = localInputToMs(resumeFrom);
+    if (!from) { toast.error('Please choose when the pause should start'); return; }
+    if (until && until <= from) { toast.error('Resume time must be after the stop time'); return; }
+    const next = { mode: 'scheduled', notice: notice.trim(), stopFrom: from, resumeFrom: until };
+    if (await persist(next)) { setMode('scheduled'); toast.success('Schedule saved'); }
+  }
+
+  async function cancelSchedule() {
+    const next = { mode: 'open', notice: '', stopFrom: null, resumeFrom: null };
+    if (await persist(next)) {
+      setMode('open'); setNotice(''); setStopFrom(''); setResumeFrom('');
+      toast.success('Schedule cancelled — service stays open');
+    }
+  }
+
+  const inp = "w-full bg-bg-warm border border-orange-100 rounded-xl px-3 py-2.5 text-sm text-text-main focus:outline-none focus:border-primary";
+
+  return (
+    <div className="space-y-5">
+
+      {/* Live status */}
+      <div className={`rounded-2xl p-4 border-2 ${
+        live.suspended ? 'bg-red-50 border-red-200'
+          : live.upcoming ? 'bg-amber-50 border-amber-200'
+          : 'bg-green-50 border-green-200'
+      }`}>
+        <div className="flex items-center gap-3">
+          <span className="text-3xl">{live.suspended ? '🔴' : live.upcoming ? '🟡' : '🟢'}</span>
+          <div className="min-w-0">
+            <p className={`font-display font-bold text-lg ${
+              live.suspended ? 'text-red-800' : live.upcoming ? 'text-amber-800' : 'text-green-800'
+            }`}>
+              {live.suspended ? 'Service Stopped' : live.upcoming ? 'Pause Scheduled' : 'Service Running'}
+            </p>
+            <p className={`text-xs ${
+              live.suspended ? 'text-red-600' : live.upcoming ? 'text-amber-700' : 'text-green-700'
+            }`}>
+              {live.suspended
+                ? (live.resumeFrom
+                    ? `Customers cannot order. Resumes automatically ${formatServiceTime(live.resumeFrom)}.`
+                    : 'Customers cannot order until you resume service.')
+                : live.upcoming
+                  ? `Orders accepted normally until ${formatServiceTime(live.stopFrom)}.`
+                  : 'Customers can browse the menu and place orders normally.'}
+            </p>
+          </div>
+        </div>
+
+        {live.suspended && (
+          <button onClick={resumeNow} disabled={saving}
+            className="mt-3 w-full py-3 rounded-xl bg-green-600 hover:bg-green-700 text-white font-bold text-sm transition-colors disabled:opacity-50">
+            ▶️ Resume Service Now
+          </button>
+        )}
+        {live.upcoming && (
+          <button onClick={cancelSchedule} disabled={saving}
+            className="mt-3 w-full py-3 rounded-xl bg-white border border-amber-300 text-amber-800 font-bold text-sm hover:bg-amber-100 transition-colors disabled:opacity-50">
+            Cancel Scheduled Pause
+          </button>
+        )}
+      </div>
+
+      {/* Notice to customers */}
+      <div className="bg-white rounded-2xl p-4 shadow-card">
+        <h3 className="font-display font-bold text-secondary text-sm mb-1">📢 Notice for Customers</h3>
+        <p className="text-text-muted text-xs mb-3">
+          This message appears on the QuikBites home page while ordering is paused. Write it in plain, friendly language.
+        </p>
+        <textarea
+          value={notice}
+          onChange={e => setNotice(e.target.value)}
+          rows={3}
+          maxLength={300}
+          placeholder="e.g. We are closed for a public holiday today and will reopen tomorrow at 8am. Thank you for your understanding!"
+          className={`${inp} resize-none`}
+          style={{ color: '#2C1A0E' }}
+        />
+        <div className="flex justify-between items-center mt-1">
+          <button
+            type="button"
+            onClick={() => setNotice(DEFAULT_NOTICE)}
+            className="text-xs text-primary font-bold hover:underline"
+          >
+            Use default message
+          </button>
+          <span className="text-xs text-text-muted">{notice.length}/300</span>
+        </div>
+      </div>
+
+      {/* Stop now */}
+      <div className="bg-white rounded-2xl p-4 shadow-card">
+        <h3 className="font-display font-bold text-secondary text-sm mb-1">⏸ Stop Now</h3>
+        <p className="text-text-muted text-xs mb-3">
+          Stops new orders immediately and shows the notice above. Orders already in the kitchen are not affected.
+        </p>
+        <button onClick={stopNow} disabled={saving || live.suspended}
+          className="w-full py-3 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-colors disabled:opacity-50">
+          {live.suspended ? 'Service is already stopped' : '⏸ Stop Service Now'}
+        </button>
+      </div>
+
+      {/* Schedule */}
+      <div className="bg-white rounded-2xl p-4 shadow-card">
+        <h3 className="font-display font-bold text-secondary text-sm mb-1">📅 Schedule a Pause</h3>
+        <p className="text-text-muted text-xs mb-3">
+          Set when ordering should stop and when it should start again. Service resumes on its own — no need to log back in.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+          <div>
+            <label className="text-xs font-bold text-text-muted mb-1 block">Stop from *</label>
+            <input type="datetime-local" value={stopFrom} onChange={e => setStopFrom(e.target.value)} className={inp} />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-text-muted mb-1 block">
+              Resume from <span className="font-normal">(optional)</span>
+            </label>
+            <input type="datetime-local" value={resumeFrom} onChange={e => setResumeFrom(e.target.value)} className={inp} />
+          </div>
+        </div>
+        <p className="text-xs text-text-muted mb-3">
+          Leave &quot;Resume from&quot; empty to pause until you resume it manually.
+        </p>
+        <button onClick={saveSchedule} disabled={saving}
+          className="btn-primary w-full py-3 rounded-xl text-sm flex items-center justify-center gap-2 disabled:opacity-50">
+          {saving ? <div className="spinner w-4 h-4" /> : <FiSave size={15} />}
+          Save Schedule
+        </button>
+      </div>
+
+      <p className="text-text-muted text-xs text-center px-4">
+        While service is stopped, customers still see the menu and your contact details — they simply cannot add items or place an order.
+      </p>
     </div>
   );
 }
