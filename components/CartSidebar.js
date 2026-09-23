@@ -1,4 +1,5 @@
 import { useCart } from '../context/CartContext';
+import { getServiceState } from '../lib/serviceStatus';
 import { useRouter } from 'next/router';
 import { FiX, FiMinus, FiPlus, FiTrash2, FiShoppingBag } from 'react-icons/fi';
 
@@ -6,6 +7,7 @@ export default function CartSidebar({ settings }) {
   const { items, isCartOpen, setIsCartOpen, updateQuantity, removeItem, subtotal, itemCount, getDiscountedPrice } = useCart();
   const router = useRouter();
 
+  const service = getServiceState(settings);
   const currency = settings?.currency || 'SBD';
   const freeThreshold = settings?.freeDeliveryThreshold || 100;
 
@@ -103,11 +105,20 @@ export default function CartSidebar({ settings }) {
               <span className="text-text-muted font-semibold text-sm">Subtotal</span>
               <span className="font-black text-secondary text-lg">{currency} {subtotal.toFixed(0)}</span>
             </div>
-            <button
-              onClick={() => { setIsCartOpen(false); router.push('/checkout'); }}
-              className="btn-primary w-full py-4 rounded-xl text-base font-black">
-              Proceed to Checkout →
-            </button>
+            {service.suspended ? (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center">
+                <p className="text-red-800 font-bold text-sm">🚧 Ordering is paused</p>
+                <p className="text-red-600 text-xs mt-1">
+                  We are not accepting new orders right now. Your cart is saved for when we reopen.
+                </p>
+              </div>
+            ) : (
+              <button
+                onClick={() => { setIsCartOpen(false); router.push('/checkout'); }}
+                className="btn-primary w-full py-4 rounded-xl text-base font-black">
+                Proceed to Checkout →
+              </button>
+            )}
           </div>
         )}
       </div>
