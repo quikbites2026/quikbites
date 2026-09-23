@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useCart } from '../context/CartContext';
 import { FiPlus, FiMinus, FiChevronDown, FiChevronUp } from 'react-icons/fi';
 
-export default function MenuCard({ item, currency = 'SBD', orderingDisabled = false }) {
+export default function MenuCard({ item, currency = 'SBD', suspended = false }) {
   const { addItem, items, updateQuantity } = useCart();
   const [adding, setAdding] = useState(false);
   const [showFullDesc, setShowFullDesc] = useState(false);
