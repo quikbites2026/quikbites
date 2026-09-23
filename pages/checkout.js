@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { useCart } from '../context/CartContext';
-import { getSettings, createOrder } from '../lib/firebaseHelpers';
+import { getSettings, createOrder, subscribeToSettings } from '../lib/firebaseHelpers';
+import { getServiceState, formatServiceTime } from '../lib/serviceStatus';
 import toast from 'react-hot-toast';
 import { FiArrowLeft, FiMapPin, FiUser, FiPhone, FiMail, FiFileText, FiHome, FiTruck } from 'react-icons/fi';
 
@@ -22,6 +23,8 @@ export default function Checkout() {
       setSettings(s);
       if (s?.deliveryAreas?.length) setSelectedArea(s.deliveryAreas[0].id);
     });
+    const unsub = subscribeToSettings(s => setSettings(s));
+    return () => unsub();
   }, []);
 
   // Only redirect to home if cart is empty AND order hasn't been placed
@@ -29,6 +32,7 @@ export default function Checkout() {
     if (items.length === 0 && !orderPlaced) router.push('/');
   }, [items, router, orderPlaced]);
 
+  const service = getServiceState(settings);
   const currency = settings?.currency || 'SBD';
   const freeThreshold = settings?.freeDeliveryThreshold || 100;
   const area = settings?.deliveryAreas?.find(a => a.id === selectedArea);
@@ -46,6 +50,10 @@ export default function Checkout() {
 
   async function handleSubmit(e) {
     e.preventDefault();
+    if (service.suspended) {
+      toast.error('Ordering is temporarily paused. Please try again later.');
+      return;
+    }
     if (!form.name || !form.phone) { toast.error('Please fill in your name and phone number'); return; }
     if (orderType === 'delivery' && !form.address) { toast.error('Please enter your delivery address'); return; }
     setLoading(true);
@@ -97,6 +105,23 @@ export default function Checkout() {
 
         <form onSubmit={handleSubmit} className="max-w-2xl mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4"
           style={{paddingBottom: 'max(120px, env(safe-area-inset-bottom, 120px))'}}>
+          {service.suspended && (
+            <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-4 text-center">
+              <span className="text-3xl">🚧</span>
+              <p className="font-display font-bold text-red-800 text-base mt-1">Ordering is temporarily paused</p>
+              <p className="text-red-700 text-sm mt-1 whitespace-pre-line">{service.notice}</p>
+              {service.resumeFrom && (
+                <p className="text-red-800 text-sm font-bold mt-2">
+                  ⏰ Expected to resume at {formatServiceTime(service.resumeFrom)}
+                </p>
+              )}
+              <button type="button" onClick={() => router.push('/')}
+                className="mt-3 btn-primary px-5 py-2 rounded-xl text-sm">
+                Back to Menu
+              </button>
+            </div>
+          )}
+
 
           {/* Order Type */}
           <div className="bg-white rounded-2xl p-4 shadow-card">
@@ -249,11 +274,13 @@ export default function Checkout() {
           {/* Submit — sticky on mobile */}
           <div className="fixed bottom-0 left-0 right-0 sm:relative sm:bottom-auto sm:left-auto sm:right-auto bg-white sm:bg-transparent p-3 sm:p-0 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] sm:shadow-none"
             style={{paddingBottom: 'max(12px, env(safe-area-inset-bottom))'}}>
-            <button type="submit" disabled={loading || items.length === 0}
+            <button type="submit" disabled={loading || items.length === 0 || service.suspended}
               className="btn-primary w-full py-4 rounded-2xl text-base font-black max-w-2xl mx-auto block">
               {loading ? (
                 <span className="flex items-center justify-center gap-2"><div className="spinner w-5 h-5" /> Placing Order...</span>
-              ) : `🍛 Place Order — ${currency} ${total.toFixed(0)}`}
+              ) : service.suspended
+                ? '🚧 Ordering paused'
+                : `🍛 Place Order — ${currency} ${total.toFixed(0)}`}
             </button>
           </div>
         </form>
