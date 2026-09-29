@@ -127,6 +127,14 @@ export default function Home() {
           <p className="text-white/60 text-sm max-w-md mx-auto">
             Freshly cooked & delivered in Honiara. Free delivery over {currency} {settings?.freeDeliveryThreshold || 100}!
           </p>
+
+          {/* Halal badge */}
+          <div className="mt-4 inline-flex items-center gap-2 bg-white border-2 border-green-500 px-5 py-2 rounded-full shadow-lg">
+            <span className="text-green-600 text-base leading-none">☽</span>
+            <span className="text-green-600 font-black text-sm sm:text-base tracking-wide">HALAL</span>
+            <span className="text-green-500 text-base leading-none">✓</span>
+          </div>
+
           {!isOpen && !service.suspended && (
             <div className="mt-4 inline-block bg-red-500/20 border border-red-400/30 text-red-200 text-sm font-semibold px-4 py-2 rounded-full">
               😴 We&apos;re currently closed. Come back during opening hours!
