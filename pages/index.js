@@ -128,11 +128,20 @@ export default function Home() {
             Freshly cooked & delivered in Honiara. Free delivery over {currency} {settings?.freeDeliveryThreshold || 100}!
           </p>
 
-          {/* Halal badge */}
-          <div className="mt-4 inline-flex items-center gap-2 bg-white border-2 border-green-500 px-5 py-2 rounded-full shadow-lg">
-            <span className="text-green-600 text-base leading-none">☽</span>
-            <span className="text-green-600 font-black text-sm sm:text-base tracking-wide">HALAL</span>
-            <span className="text-green-500 text-base leading-none">✓</span>
+          {/* Halal logo badge */}
+          <div className="mt-4 inline-flex items-center gap-3 bg-white rounded-2xl px-4 py-2 shadow-lg">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/Halal_logo.svg"
+              alt="Halal Certified"
+              width={48}
+              height={48}
+              className="w-10 h-10 sm:w-12 sm:h-12"
+            />
+            <div className="text-left">
+              <p className="text-green-700 font-black text-sm sm:text-base leading-tight tracking-wide">HALAL</p>
+              <p className="text-green-600 text-xs font-semibold leading-tight">Certified</p>
+            </div>
           </div>
 
           {!isOpen && !service.suspended && (
