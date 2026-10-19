@@ -150,10 +150,7 @@ export default function Home() {
           <div className="bg-red-50 border-b-2 border-red-200">
             <div className="max-w-3xl mx-auto px-4 py-5 text-center">
               <span className="text-4xl">🚧</span>
-              <h2 className="font-display font-bold text-red-800 text-lg sm:text-xl mt-2">
-                Ordering is temporarily unavailable
-              </h2>
-              <p className="text-red-700 text-sm mt-2 max-w-xl mx-auto leading-relaxed whitespace-pre-line">
+              <p className="text-red-700 text-sm mt-3 max-w-xl mx-auto leading-relaxed whitespace-pre-line">
                 {service.notice}
               </p>
               {service.resumeFrom && (
